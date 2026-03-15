@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Backend Prototype Tester</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 16px;
+        max-width: 900px;
+      }
+
+      h1 {
+        margin-bottom: 8px;
+      }
+
+      .row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+      }
+
+      input {
+        padding: 8px;
+        min-width: 220px;
+      }
+
+      button {
+        padding: 8px 12px;
+      }
+
+      #status {
+        margin: 8px 0;
+        font-size: 14px;
+      }
+
+      #token {
+        width: 100%;
+        margin: 8px 0;
+      }
+
+      #logs {
+        border: 1px solid #ccc;
+        padding: 10px;
+        min-height: 260px;
+        max-height: 520px;
+        overflow: auto;
+        background: #fafafa;
+        white-space: pre-wrap;
+        font-family: monospace;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Prototype Auth + Socket Tester</h1>
+    <div id="status">Status: idle</div>
+
+    <div class="row">
+      <input id="baseUrl" placeholder="Base URL" value="http://localhost:3000" />
+      <input id="teamName" placeholder="team_name" />
+      <input id="password" placeholder="password" type="password" />
+      <button id="loginBtn">Login</button>
+      <button id="logoutBtn">Logout API</button>
+    </div>
+
+    <div class="row">
+      <input id="compId" placeholder="competition id" />
+      <button id="stateBtn">GET /competition/:id/state</button>
+      <button id="connectBtn">Connect Socket</button>
+      <button id="disconnectBtn">Disconnect Socket</button>
+      <button id="clearBtn">Clear Logs</button>
+    </div>
+
+    <label for="token">Access token</label>
+    <textarea id="token" rows="4" placeholder="Token appears here"></textarea>
+
+    <div id="logs"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="module" src="./prototype.jsx"></script>
+  </body>
+</html>

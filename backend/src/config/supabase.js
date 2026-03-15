@@ -1,8 +1,12 @@
-const { createClient } = require("@supabase/supabase-js");
+import { createClient } from '@supabase/supabase-js';
+import { env } from './env.js';
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SECRET_KEY
-);
+const sharedOptions = {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+  },
+};
 
-module.exports = supabase;
+export const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_PUBLISHABLE_KEY, sharedOptions);
+export const supabaseAdmin = createClient(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY, sharedOptions);
