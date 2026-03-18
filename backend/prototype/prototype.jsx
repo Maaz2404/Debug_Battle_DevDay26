@@ -11,13 +11,41 @@ const els = {
   logoutBtn: document.getElementById('logoutBtn'),
   compId: document.getElementById('compId'),
   stateBtn: document.getElementById('stateBtn'),
+  redisBtn: document.getElementById('redisBtn'),
+  roundId: document.getElementById('roundId'),
+  questionId: document.getElementById('questionId'),
+  language: document.getElementById('language'),
+  runBtn: document.getElementById('runBtn'),
   connectBtn: document.getElementById('connectBtn'),
   disconnectBtn: document.getElementById('disconnectBtn'),
   clearBtn: document.getElementById('clearBtn'),
   token: document.getElementById('token'),
+  code: document.getElementById('code'),
   status: document.getElementById('status'),
   logs: document.getElementById('logs'),
 };
+
+els.code.value = `#include <iostream>
+#include <vector>
+
+void reverseVector(std::vector<int>& arr) {
+    int n = arr.size();
+    for (int i = 0; i < n; i++) {
+        int temp = arr[i];
+        arr[i] = arr[n - 1 - i];
+        arr[n - 1 - i] = temp;
+    }
+}
+
+int main() {
+    std::vector<int> myNumbers = {1, 2, 3, 4, 5};
+    reverseVector(myNumbers);
+
+    for (int num : myNumbers) {
+        std::cout << num << " ";
+    }
+    return 0;
+}`;
 
 function log(label, payload = null) {
   const line = payload === null
@@ -120,6 +148,63 @@ async function fetchState() {
   }
 }
 
+async function checkRedisHealth() {
+  const base = getBaseUrl();
+  const token = getToken();
+
+  if (!token) {
+    log('redis check blocked', { reason: 'token missing' });
+    return;
+  }
+
+  try {
+    const res = await fetch(`${base}/api/infra/redis`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const json = await res.json();
+    log('redis health response', { status: res.status, body: json });
+  } catch (error) {
+    log('redis health error', { message: String(error) });
+  }
+}
+
+async function runCodeApi() {
+  const base = getBaseUrl();
+  const token = getToken();
+  const roundId = els.roundId.value.trim();
+  const questionId = els.questionId.value.trim();
+  const language = els.language.value.trim();
+  const code = els.code.value;
+
+  if (!token || !roundId || !questionId || !language || !code) {
+    log('run blocked', {
+      reason: 'token, roundId, questionId, language, and code are required',
+    });
+    return;
+  }
+
+  try {
+    const res = await fetch(`${base}/api/run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        code,
+        language,
+        questionId,
+        roundId,
+      }),
+    });
+
+    const json = await res.json();
+    log('run request response', { status: res.status, body: json });
+  } catch (error) {
+    log('run request error', { message: String(error) });
+  }
+}
+
 function disconnectSocket() {
   if (!state.socket) {
     log('socket', { info: 'already disconnected' });
@@ -188,6 +273,8 @@ function connectSocket() {
 els.loginBtn.addEventListener('click', login);
 els.logoutBtn.addEventListener('click', logoutApi);
 els.stateBtn.addEventListener('click', fetchState);
+els.redisBtn.addEventListener('click', checkRedisHealth);
+els.runBtn.addEventListener('click', runCodeApi);
 els.connectBtn.addEventListener('click', connectSocket);
 els.disconnectBtn.addEventListener('click', disconnectSocket);
 els.clearBtn.addEventListener('click', () => {

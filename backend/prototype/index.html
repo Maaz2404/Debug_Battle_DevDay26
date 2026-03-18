@@ -41,6 +41,13 @@
         margin: 8px 0;
       }
 
+      #code {
+        width: 100%;
+        margin: 8px 0;
+        font-family: monospace;
+        font-size: 12px;
+      }
+
       #logs {
         border: 1px solid #ccc;
         padding: 10px;
@@ -69,13 +76,24 @@
     <div class="row">
       <input id="compId" placeholder="competition id" />
       <button id="stateBtn">GET /competition/:id/state</button>
+      <button id="redisBtn">GET /infra/redis</button>
       <button id="connectBtn">Connect Socket</button>
       <button id="disconnectBtn">Disconnect Socket</button>
       <button id="clearBtn">Clear Logs</button>
     </div>
 
+    <div class="row">
+      <input id="roundId" placeholder="roundId" />
+      <input id="questionId" placeholder="questionId" />
+      <input id="language" placeholder="language (e.g. cpp)" value="cpp" />
+      <button id="runBtn">POST /run</button>
+    </div>
+
     <label for="token">Access token</label>
     <textarea id="token" rows="4" placeholder="Token appears here"></textarea>
+
+    <label for="code">Code</label>
+    <textarea id="code" rows="14" placeholder="Paste code to run"></textarea>
 
     <div id="logs"></div>
 

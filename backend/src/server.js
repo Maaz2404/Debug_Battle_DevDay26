@@ -8,6 +8,7 @@ import { env } from './config/env.js';
 import routes from './routes/index.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
 import { createSocketServer } from './socket/index.js';
+import { startCompileWorker } from './workers/compileWorker.js';
 
 const app = express();
 const server = createServer(app);
@@ -37,6 +38,7 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 createSocketServer(server);
+startCompileWorker();
 
 server.listen(env.PORT, () => {
   console.log(`server running at http://localhost:${env.PORT}`);

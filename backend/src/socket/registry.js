@@ -47,3 +47,25 @@ export function disconnectUserSockets(userId, reason = 'logout') {
   userToSockets.delete(userId);
   return disconnected;
 }
+
+export function emitToUserSockets(userId, event, payload) {
+  if (!ioRef) {
+    return 0;
+  }
+
+  const sockets = userToSockets.get(userId);
+  if (!sockets) {
+    return 0;
+  }
+
+  let emitted = 0;
+  for (const socketId of sockets) {
+    const socket = ioRef.sockets.sockets.get(socketId);
+    if (socket) {
+      socket.emit(event, payload);
+      emitted += 1;
+    }
+  }
+
+  return emitted;
+}
