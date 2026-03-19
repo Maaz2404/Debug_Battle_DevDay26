@@ -10,6 +10,20 @@ function getTokenFromRequest(req) {
   return null;
 }
 
+function isAdminUser(user) {
+  const email = String(user?.email || '').trim().toLowerCase();
+  const adminEmails = env.ADMIN_EMAILS
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  const metadataRole = String(
+    user?.app_metadata?.role || user?.user_metadata?.role || '',
+  ).trim().toLowerCase();
+
+  return adminEmails.includes(email) || metadataRole === 'admin';
+}
+
 export async function requireAuth(req, res, next) {
   try {
     const token = getTokenFromRequest(req);
@@ -22,7 +36,8 @@ export async function requireAuth(req, res, next) {
       throw new HttpError(401, 'Invalid or expired token');
     }
 
-    const userId = data.user.id;
+    const user = data.user;
+    const userId = user.id;
     const { data: team, error: teamError } = await supabaseAdmin
       .from('teams')
       .select('id, name')
@@ -33,12 +48,14 @@ export async function requireAuth(req, res, next) {
       throw new HttpError(500, 'Failed to resolve team', teamError.message);
     }
 
+    const role = isAdminUser(user) ? 'admin' : 'participant';
+
     req.auth = {
       sub: userId,
       user_id: userId,
       team_id: team?.id || null,
       team_name: team?.name || null,
-      role: 'participant',
+      role,
       competition_id: env.COMPETITION_ID,
     };
     req.token = token;

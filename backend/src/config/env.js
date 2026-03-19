@@ -28,6 +28,7 @@ export const env = {
   SUPABASE_PUBLISHABLE_KEY: supabasePublishableKey,
   COMPETITION_ID: requireEnv('COMPETITION_ID'),
   ALLOWED_ORIGIN: process.env.ALLOWED_ORIGIN || '*',
+  ADMIN_EMAILS: process.env.ADMIN_EMAILS || '',
   ONECOMPILER_API_URL: process.env.ONECOMPILER_API_URL,
   ONECOMPILER_API_KEY: process.env.ONECOMPILER_API_KEY,
   REDIS_URL: process.env.REDIS_URL,
