@@ -69,3 +69,12 @@ export function emitToUserSockets(userId, event, payload) {
 
   return emitted;
 }
+
+export function emitToRoom(room, event, payload) {
+  if (!ioRef) {
+    return false;
+  }
+
+  ioRef.to(room).emit(event, payload);
+  return true;
+}

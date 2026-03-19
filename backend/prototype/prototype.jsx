@@ -1,6 +1,9 @@
 const state = {
   token: '',
   socket: null,
+  submitReady: false,
+  submitReadyRoundId: null,
+  submitReadyQuestionId: null,
 };
 
 const els = {
@@ -16,6 +19,7 @@ const els = {
   questionId: document.getElementById('questionId'),
   language: document.getElementById('language'),
   runBtn: document.getElementById('runBtn'),
+  submitBtn: document.getElementById('submitBtn'),
   connectBtn: document.getElementById('connectBtn'),
   disconnectBtn: document.getElementById('disconnectBtn'),
   clearBtn: document.getElementById('clearBtn'),
@@ -67,6 +71,22 @@ function getToken() {
   return els.token.value.trim();
 }
 
+function setSubmitEnabled(enabled, reason = '') {
+  state.submitReady = enabled;
+  els.submitBtn.disabled = !enabled;
+  if (enabled) {
+    els.submitBtn.title = 'Submit is enabled (passing run detected).';
+  } else {
+    els.submitBtn.title = reason || 'Submit requires a passing run for current round/question.';
+  }
+}
+
+function resetSubmitGate(reason = 'Run again to unlock submit.') {
+  state.submitReadyRoundId = null;
+  state.submitReadyQuestionId = null;
+  setSubmitEnabled(false, reason);
+}
+
 async function login() {
   const base = getBaseUrl();
   const teamName = els.teamName.value.trim();
@@ -95,6 +115,7 @@ async function login() {
     const token = json?.data?.access_token || '';
     state.token = token;
     els.token.value = token;
+    resetSubmitGate('Run again after login to unlock submit.');
     setStatus('login success');
     log('login success', json);
   } catch (error) {
@@ -205,6 +226,57 @@ async function runCodeApi() {
   }
 }
 
+async function submitCodeApi() {
+  const base = getBaseUrl();
+  const token = getToken();
+  const roundId = els.roundId.value.trim();
+  const questionId = els.questionId.value.trim();
+  const language = els.language.value.trim();
+  const code = els.code.value;
+
+  if (!token || !roundId || !questionId || !language || !code) {
+    log('submit blocked', {
+      reason: 'token, roundId, questionId, language, and code are required',
+    });
+    return;
+  }
+
+  if (!state.submitReady
+    || state.submitReadyRoundId !== roundId
+    || state.submitReadyQuestionId !== questionId) {
+    log('submit blocked', {
+      reason: 'Submit is locked until a passing run result is received for the current round/question',
+      submitReady: state.submitReady,
+      submitReadyRoundId: state.submitReadyRoundId,
+      submitReadyQuestionId: state.submitReadyQuestionId,
+      roundId,
+      questionId,
+    });
+    return;
+  }
+
+  try {
+    const res = await fetch(`${base}/api/submit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        code,
+        language,
+        questionId,
+        roundId,
+      }),
+    });
+
+    const json = await res.json();
+    log('submit request response', { status: res.status, body: json });
+  } catch (error) {
+    log('submit request error', { message: String(error) });
+  }
+}
+
 function disconnectSocket() {
   if (!state.socket) {
     log('socket', { info: 'already disconnected' });
@@ -213,6 +285,7 @@ function disconnectSocket() {
 
   state.socket.disconnect();
   state.socket = null;
+  resetSubmitGate('Socket disconnected. Run again after reconnect to unlock submit.');
   setStatus('socket disconnected');
 }
 
@@ -241,7 +314,6 @@ function connectSocket() {
     'question:next',
     'round:end',
     'submission:result',
-    'run:result',
     'leaderboard:update',
     'session:ended',
   ];
@@ -261,6 +333,32 @@ function connectSocket() {
     log('socket connect_error', { message: error.message });
   });
 
+  socket.on('run:result', (payload) => {
+    log('socket event: run:result', payload);
+
+    const currentRoundId = els.roundId.value.trim();
+    const currentQuestionId = els.questionId.value.trim();
+    const payloadRoundId = String(payload?.round_id ?? '');
+    const payloadQuestionId = String(payload?.question_id ?? '');
+    const payloadStatus = String(payload?.status ?? '');
+
+    const sameTarget = payloadRoundId === currentRoundId && payloadQuestionId === currentQuestionId;
+    if (sameTarget && payloadStatus === 'ACCEPTED') {
+      state.submitReadyRoundId = payloadRoundId;
+      state.submitReadyQuestionId = payloadQuestionId;
+      setSubmitEnabled(true);
+      log('submit unlocked', {
+        roundId: payloadRoundId,
+        questionId: payloadQuestionId,
+      });
+      return;
+    }
+
+    if (sameTarget) {
+      resetSubmitGate('Latest run did not pass all test cases.');
+    }
+  });
+
   for (const eventName of eventNames) {
     socket.on(eventName, (payload) => {
       log(`socket event: ${eventName}`, payload);
@@ -275,10 +373,17 @@ els.logoutBtn.addEventListener('click', logoutApi);
 els.stateBtn.addEventListener('click', fetchState);
 els.redisBtn.addEventListener('click', checkRedisHealth);
 els.runBtn.addEventListener('click', runCodeApi);
+els.submitBtn.addEventListener('click', submitCodeApi);
 els.connectBtn.addEventListener('click', connectSocket);
 els.disconnectBtn.addEventListener('click', disconnectSocket);
+els.roundId.addEventListener('input', () => resetSubmitGate('Round changed. Run again to unlock submit.'));
+els.questionId.addEventListener('input', () => resetSubmitGate('Question changed. Run again to unlock submit.'));
+els.language.addEventListener('input', () => resetSubmitGate('Language changed. Run again to unlock submit.'));
+els.code.addEventListener('input', () => resetSubmitGate('Code changed. Run again to unlock submit.'));
 els.clearBtn.addEventListener('click', () => {
   els.logs.textContent = '';
 });
+
+resetSubmitGate('Run once to unlock submit.');
 
 log('prototype loaded');
