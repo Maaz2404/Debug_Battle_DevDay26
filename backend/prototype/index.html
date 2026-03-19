@@ -36,6 +36,18 @@
         font-size: 14px;
       }
 
+      #runSubmitState {
+        margin: 8px 0 12px;
+        display: inline-block;
+        padding: 6px 10px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-family: monospace;
+        border: 1px solid #cfd8dc;
+        background: #f5f7f8;
+        color: #333;
+      }
+
       #token {
         width: 100%;
         margin: 8px 0;
@@ -64,6 +76,7 @@
   <body>
     <h1>Prototype Auth + Socket Tester</h1>
     <div id="status">Status: idle</div>
+    <div id="runSubmitState">Run/Submit State: idle</div>
 
     <div class="row">
       <input id="baseUrl" placeholder="Base URL" value="http://localhost:3000" />
@@ -80,6 +93,20 @@
       <button id="connectBtn">Connect Socket</button>
       <button id="disconnectBtn">Disconnect Socket</button>
       <button id="clearBtn">Clear Logs</button>
+    </div>
+
+    <div class="row">
+      <input id="adminEmail" placeholder="admin email" />
+      <input id="adminPassword" placeholder="admin password" type="password" />
+      <button id="adminLoginBtn">Admin Login</button>
+    </div>
+
+    <div class="row">
+      <input id="adminRoundNumber" placeholder="round number (e.g. 1)" />
+      <button id="adminStartBtn">Start Round</button>
+      <button id="adminPauseBtn">Pause Round</button>
+      <button id="adminResumeBtn">Resume Round</button>
+      <button id="adminEndBtn">End Round</button>
     </div>
 
     <div class="row">

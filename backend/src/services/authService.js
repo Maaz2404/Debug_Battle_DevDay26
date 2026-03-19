@@ -1,4 +1,5 @@
 import { supabase, supabaseAdmin } from '../config/supabase.js';
+import { env } from '../config/env.js';
 import { HttpError } from '../utils/http.js';
 
 function validateLoginInput(payload) {
@@ -77,4 +78,47 @@ export async function loginParticipant(payload) {
 export async function logoutParticipant(_token) {
   // TODO: Add persistent token revocation store if strict server-side invalidation is required.
   return { success: true };
+}
+
+export async function loginAdmin(payload) {
+  const { email, password } = payload || {};
+
+  if (!email || typeof email !== 'string') {
+    throw new HttpError(400, 'email is required');
+  }
+
+  if (!password || typeof password !== 'string') {
+    throw new HttpError(400, 'password is required');
+  }
+
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error || !data?.session?.access_token) {
+    throw new HttpError(401, 'Invalid admin credentials');
+  }
+
+  const user = data.user || null;
+  const normalizedEmail = String(user?.email || '').trim().toLowerCase();
+  const allowedAdmins = env.ADMIN_EMAILS
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  const metadataRole = String(
+    user?.app_metadata?.role || user?.user_metadata?.role || '',
+  ).trim().toLowerCase();
+
+  const isAdmin = allowedAdmins.includes(normalizedEmail) || metadataRole === 'admin';
+  if (!isAdmin) {
+    throw new HttpError(403, 'Admin role required');
+  }
+
+  const { session } = data;
+
+  return {
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+    token_type: 'Bearer',
+    expires_in: session.expires_in,
+    session_scope: 'admin',
+    user: data.user || null,
+  };
 }

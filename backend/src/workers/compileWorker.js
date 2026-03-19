@@ -5,6 +5,14 @@ import { supabaseAdmin } from '../config/supabase.js';
 import { runCodeOnOneCompiler } from '../services/oneCompilerService.js';
 import { emitToRoom, emitToUserSockets } from '../socket/registry.js';
 
+const leaderboardThrottleMs = Number(env.LEADERBOARD_BROADCAST_INTERVAL_MS || 1000);
+let leaderboardCooldownActive = false;
+let queuedLeaderboardRoundId = null;
+
+function teamQuestionProgressKey(roundId, teamId, questionId) {
+  return `live:progress:${roundId}:${teamId}:${questionId}`;
+}
+
 function normalizeOutput(value) {
   return String(value ?? '')
     .replace(/\r\n/g, '\n')
@@ -229,6 +237,126 @@ async function getTeamTotalScore(teamId) {
   return (data || []).reduce((sum, row) => sum + Number(row.total_score || 0), 0);
 }
 
+async function getRoundQuestionIds(roundId) {
+  const { data, error } = await supabaseAdmin
+    .from('questions')
+    .select('id')
+    .eq('round_id', roundId)
+    .order('position', { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to load round question ids: ${error.message}`);
+  }
+
+  return (data || []).map((row) => row.id);
+}
+
+async function upsertTeamQuestionProgress({
+  roundId,
+  teamId,
+  questionId,
+  completed,
+  completedAt,
+  score,
+  solveRank,
+  submissionId,
+}) {
+  await redis.hset(teamQuestionProgressKey(roundId, teamId, questionId), {
+    completed: completed ? '1' : '0',
+    completed_at: completedAt || '',
+    score: String(Number(score || 0)),
+    solve_rank: String(Number(solveRank || 0)),
+    submission_id: String(submissionId || ''),
+    updated_at: new Date().toISOString(),
+  });
+}
+
+async function buildLiveLeaderboardPayload(roundId) {
+  const leaderboardKey = `leaderboard:${env.COMPETITION_ID}`;
+  const raw = await redis.zrevrange(leaderboardKey, 0, 29, 'WITHSCORES');
+
+  const teamEntries = [];
+  const teamIds = [];
+  for (let i = 0; i < raw.length; i += 2) {
+    const teamId = raw[i];
+    const score = Number(raw[i + 1] || 0);
+    teamEntries.push({ teamId, score });
+    teamIds.push(teamId);
+  }
+
+  const teamNamesMap = new Map();
+  if (teamIds.length > 0) {
+    const { data: teams, error: teamsError } = await supabaseAdmin
+      .from('teams')
+      .select('id, name')
+      .in('id', teamIds);
+
+    if (teamsError) {
+      throw new Error(`Failed to load team names for leaderboard: ${teamsError.message}`);
+    }
+
+    for (const team of teams || []) {
+      teamNamesMap.set(team.id, team.name);
+    }
+  }
+
+  const questionIds = await getRoundQuestionIds(roundId);
+
+  const rankings = await Promise.all(teamEntries.map(async (entry, index) => {
+    const perQuestion = await Promise.all(questionIds.map(async (questionId) => {
+      const progress = await redis.hgetall(teamQuestionProgressKey(roundId, entry.teamId, questionId));
+      return {
+        question_id: questionId,
+        completed: progress?.completed === '1',
+        completed_at: progress?.completed_at || null,
+        score: Number(progress?.score || 0),
+        solve_rank: Number(progress?.solve_rank || 0) || null,
+        submission_id: progress?.submission_id || null,
+      };
+    }));
+
+    return {
+      rank: index + 1,
+      team_id: entry.teamId,
+      team_name: teamNamesMap.get(entry.teamId) || 'Unknown Team',
+      total_score: entry.score,
+      per_question: perQuestion,
+    };
+  }));
+
+  return {
+    round_id: roundId,
+    generated_at: new Date().toISOString(),
+    rankings,
+  };
+}
+
+async function emitLeaderboardUpdateNow(roundId) {
+  const leaderboardPayload = await buildLiveLeaderboardPayload(roundId);
+  emitToRoom(`comp:${env.COMPETITION_ID}`, 'leaderboard:update', leaderboardPayload);
+}
+
+function scheduleLeaderboardUpdate(roundId) {
+  if (!leaderboardCooldownActive) {
+    leaderboardCooldownActive = true;
+    emitLeaderboardUpdateNow(roundId).catch((error) => {
+      console.error('[compile-worker] leaderboard emit failed', { message: error.message });
+    });
+
+    setTimeout(() => {
+      leaderboardCooldownActive = false;
+      if (queuedLeaderboardRoundId) {
+        const nextRoundId = queuedLeaderboardRoundId;
+        queuedLeaderboardRoundId = null;
+        scheduleLeaderboardUpdate(nextRoundId);
+      }
+    }, Math.max(250, leaderboardThrottleMs));
+    return;
+  }
+
+  queuedLeaderboardRoundId = roundId;
+}
+
 async function processSubmitJob(job) {
   const {
     submissionId,
@@ -256,6 +384,17 @@ async function processSubmitJob(job) {
 
   await updateSubmission(submissionId, { status: 'COMPILING' });
 
+  await upsertTeamQuestionProgress({
+    roundId,
+    teamId,
+    questionId,
+    completed: false,
+    completedAt: null,
+    score: 0,
+    solveRank: 0,
+    submissionId,
+  });
+
   const evaluation = await evaluateTestCases({
     submissionId,
     language,
@@ -275,6 +414,17 @@ async function processSubmitJob(job) {
       result,
     });
 
+    await upsertTeamQuestionProgress({
+      roundId,
+      teamId,
+      questionId,
+      completed: false,
+      completedAt: null,
+      score: 0,
+      solveRank: 0,
+      submissionId,
+    });
+
     await redis.del(dedupKey(teamId, questionId));
 
     emitToUserSockets(userId, 'submission:result', {
@@ -290,9 +440,6 @@ async function processSubmitJob(job) {
 
   const wrongAttempts = await countWrongSubmitAttempts(teamId, questionId);
   const effectiveBaseScore = Math.max(10, Number(questionBaseScore || 100) - (wrongAttempts * 5));
-  const acceptedCount = await countAcceptedSubmitForRank(questionId);
-  const solveRank = acceptedCount + 1;
-  const bonusScore = bonusByRank(solveRank);
 
   const result = {
     passed: evaluation.passed,
@@ -300,12 +447,27 @@ async function processSubmitJob(job) {
     test_results: evaluation.test_results,
   };
 
+  const acceptedCount = await countAcceptedSubmitForRank(questionId);
+  const solveRank = acceptedCount + 1;
+  const bonusScore = bonusByRank(solveRank);
+
   await updateSubmission(submissionId, {
     status: 'ACCEPTED',
     result,
     solve_rank: solveRank,
     base_score: effectiveBaseScore,
     bonus_score: bonusScore,
+  });
+
+  await upsertTeamQuestionProgress({
+    roundId,
+    teamId,
+    questionId,
+    completed: true,
+    completedAt: new Date().toISOString(),
+    score: effectiveBaseScore + bonusScore,
+    solveRank,
+    submissionId,
   });
 
   const teamTotal = await getTeamTotalScore(teamId);
@@ -326,11 +488,7 @@ async function processSubmitJob(job) {
     },
   });
 
-  emitToRoom(`comp:${env.COMPETITION_ID}`, 'leaderboard:update', {
-    team_id: teamId,
-    total_score: teamTotal,
-    updated_submission_id: submissionId,
-  });
+  scheduleLeaderboardUpdate(roundId);
 }
 
 async function processCompileJob(job) {

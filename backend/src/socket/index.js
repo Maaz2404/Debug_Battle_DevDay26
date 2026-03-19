@@ -20,7 +20,7 @@ function extractSocketToken(socket) {
 export function createSocketServer(httpServer) {
   const io = new Server(httpServer, {
     cors: {
-      origin: env.ALLOWED_ORIGIN,
+      origin: env.ALLOWED_ORIGINS.length === 1 ? env.ALLOWED_ORIGINS[0] : env.ALLOWED_ORIGINS,
       methods: ['GET', 'POST'],
       credentials: true,
     },

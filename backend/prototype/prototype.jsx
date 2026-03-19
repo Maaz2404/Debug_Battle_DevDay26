@@ -1,9 +1,13 @@
 const state = {
   token: '',
+  adminToken: '',
   socket: null,
   submitReady: false,
   submitReadyRoundId: null,
   submitReadyQuestionId: null,
+  pendingRunSubmissionId: null,
+  pendingSubmitSubmissionId: null,
+  lastRunResultSubmissionId: null,
 };
 
 const els = {
@@ -12,6 +16,14 @@ const els = {
   password: document.getElementById('password'),
   loginBtn: document.getElementById('loginBtn'),
   logoutBtn: document.getElementById('logoutBtn'),
+  adminEmail: document.getElementById('adminEmail'),
+  adminPassword: document.getElementById('adminPassword'),
+  adminLoginBtn: document.getElementById('adminLoginBtn'),
+  adminRoundNumber: document.getElementById('adminRoundNumber'),
+  adminStartBtn: document.getElementById('adminStartBtn'),
+  adminPauseBtn: document.getElementById('adminPauseBtn'),
+  adminResumeBtn: document.getElementById('adminResumeBtn'),
+  adminEndBtn: document.getElementById('adminEndBtn'),
   compId: document.getElementById('compId'),
   stateBtn: document.getElementById('stateBtn'),
   redisBtn: document.getElementById('redisBtn'),
@@ -26,6 +38,7 @@ const els = {
   token: document.getElementById('token'),
   code: document.getElementById('code'),
   status: document.getElementById('status'),
+  runSubmitState: document.getElementById('runSubmitState'),
   logs: document.getElementById('logs'),
 };
 
@@ -71,6 +84,10 @@ function getToken() {
   return els.token.value.trim();
 }
 
+function setRunSubmitState(text) {
+  els.runSubmitState.textContent = `Run/Submit State: ${text}`;
+}
+
 function setSubmitEnabled(enabled, reason = '') {
   state.submitReady = enabled;
   els.submitBtn.disabled = !enabled;
@@ -84,7 +101,38 @@ function setSubmitEnabled(enabled, reason = '') {
 function resetSubmitGate(reason = 'Run again to unlock submit.') {
   state.submitReadyRoundId = null;
   state.submitReadyQuestionId = null;
+  state.pendingRunSubmissionId = null;
+  state.lastRunResultSubmissionId = null;
   setSubmitEnabled(false, reason);
+  setRunSubmitState('submit locked (run required)');
+}
+
+function renderLeaderboard(payload) {
+  const rankings = Array.isArray(payload?.rankings) ? payload.rankings : [];
+  if (rankings.length === 0) {
+    return {
+      info: 'No leaderboard rows yet',
+      round_id: payload?.round_id || null,
+      generated_at: payload?.generated_at || null,
+    };
+  }
+
+  return {
+    round_id: payload?.round_id || null,
+    generated_at: payload?.generated_at || null,
+    top: rankings.slice(0, 10).map((row) => ({
+      rank: row.rank,
+      team_name: row.team_name,
+      total_score: row.total_score,
+      per_question: (row.per_question || []).map((q) => ({
+        question_id: q.question_id,
+        completed: q.completed,
+        completed_at: q.completed_at,
+        score: q.score,
+        solve_rank: q.solve_rank,
+      })),
+    })),
+  };
 }
 
 async function login() {
@@ -189,6 +237,67 @@ async function checkRedisHealth() {
   }
 }
 
+async function adminLoginApi() {
+  const base = getBaseUrl();
+  const email = els.adminEmail.value.trim();
+  const password = els.adminPassword.value;
+
+  if (!email || !password) {
+    log('admin login blocked', { reason: 'email and password required' });
+    return;
+  }
+
+  try {
+    setStatus('admin logging in');
+    const res = await fetch(`${base}/api/auth/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const json = await res.json();
+    if (!res.ok) {
+      setStatus('admin login failed');
+      log('admin login failed', json);
+      return;
+    }
+
+    const token = json?.data?.access_token || '';
+    state.adminToken = token;
+    setStatus('admin login success');
+    log('admin login success', {
+      ...json,
+      note: 'Admin token stored for admin actions; participant token unchanged',
+    });
+  } catch (error) {
+    setStatus('admin login error');
+    log('admin login error', { message: String(error) });
+  }
+}
+
+async function adminRoundAction(action) {
+  const base = getBaseUrl();
+  const token = state.adminToken || getToken();
+  const roundNumber = els.adminRoundNumber.value.trim();
+
+  if (!token || !roundNumber) {
+    log('admin action blocked', { reason: 'token and roundNumber required' });
+    return;
+  }
+
+  try {
+    const res = await fetch(`${base}/api/admin/round/${encodeURIComponent(roundNumber)}/${action}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const json = await res.json();
+    log(`admin ${action} response`, { status: res.status, body: json });
+  } catch (error) {
+    log(`admin ${action} error`, { message: String(error) });
+  }
+}
+
 async function runCodeApi() {
   const base = getBaseUrl();
   const token = getToken();
@@ -205,6 +314,9 @@ async function runCodeApi() {
   }
 
   try {
+    resetSubmitGate('New run requested. Waiting for matching run result to unlock submit.');
+    setRunSubmitState('run pending');
+
     const res = await fetch(`${base}/api/run`, {
       method: 'POST',
       headers: {
@@ -220,8 +332,11 @@ async function runCodeApi() {
     });
 
     const json = await res.json();
+    const submissionId = String(json?.data?.submission_id || '');
+    state.pendingRunSubmissionId = submissionId || null;
     log('run request response', { status: res.status, body: json });
   } catch (error) {
+    setRunSubmitState('run request error');
     log('run request error', { message: String(error) });
   }
 }
@@ -256,6 +371,9 @@ async function submitCodeApi() {
   }
 
   try {
+    state.pendingSubmitSubmissionId = null;
+    setRunSubmitState('submit pending');
+
     const res = await fetch(`${base}/api/submit`, {
       method: 'POST',
       headers: {
@@ -271,8 +389,11 @@ async function submitCodeApi() {
     });
 
     const json = await res.json();
+    const submissionId = String(json?.data?.submission_id || '');
+    state.pendingSubmitSubmissionId = submissionId || null;
     log('submit request response', { status: res.status, body: json });
   } catch (error) {
+    setRunSubmitState('submit request error');
     log('submit request error', { message: String(error) });
   }
 }
@@ -341,25 +462,53 @@ function connectSocket() {
     const payloadRoundId = String(payload?.round_id ?? '');
     const payloadQuestionId = String(payload?.question_id ?? '');
     const payloadStatus = String(payload?.status ?? '');
+    const payloadSubmissionId = String(payload?.submission_id ?? '');
 
     const sameTarget = payloadRoundId === currentRoundId && payloadQuestionId === currentQuestionId;
-    if (sameTarget && payloadStatus === 'ACCEPTED') {
+    const isLatestRun = payloadSubmissionId !== '' && payloadSubmissionId === state.pendingRunSubmissionId;
+
+    if (!sameTarget || !isLatestRun) {
+      return;
+    }
+
+    state.lastRunResultSubmissionId = payloadSubmissionId;
+
+    if (payloadStatus === 'ACCEPTED') {
       state.submitReadyRoundId = payloadRoundId;
       state.submitReadyQuestionId = payloadQuestionId;
       setSubmitEnabled(true);
+      setRunSubmitState(`run accepted (id=${payloadSubmissionId})`);
       log('submit unlocked', {
+        run_submission_id: payloadSubmissionId,
         roundId: payloadRoundId,
         questionId: payloadQuestionId,
       });
       return;
     }
 
-    if (sameTarget) {
-      resetSubmitGate('Latest run did not pass all test cases.');
+    setRunSubmitState(`run ${payloadStatus.toLowerCase()} (id=${payloadSubmissionId})`);
+    resetSubmitGate('Latest run did not pass all test cases.');
+  });
+
+  socket.on('submission:result', (payload) => {
+    log('socket event: submission:result', payload);
+
+    const payloadSubmissionId = String(payload?.submission_id ?? '');
+    if (state.pendingSubmitSubmissionId && payloadSubmissionId === state.pendingSubmitSubmissionId) {
+      state.pendingSubmitSubmissionId = null;
+      const verdict = String(payload?.status || '').toLowerCase();
+      setRunSubmitState(`submit ${verdict} (id=${payloadSubmissionId})`);
     }
   });
 
+  socket.on('leaderboard:update', (payload) => {
+    log('socket event: leaderboard:update', renderLeaderboard(payload));
+  });
+
   for (const eventName of eventNames) {
+    if (eventName === 'submission:result' || eventName === 'leaderboard:update') {
+      continue;
+    }
     socket.on(eventName, (payload) => {
       log(`socket event: ${eventName}`, payload);
     });
@@ -380,10 +529,16 @@ els.roundId.addEventListener('input', () => resetSubmitGate('Round changed. Run 
 els.questionId.addEventListener('input', () => resetSubmitGate('Question changed. Run again to unlock submit.'));
 els.language.addEventListener('input', () => resetSubmitGate('Language changed. Run again to unlock submit.'));
 els.code.addEventListener('input', () => resetSubmitGate('Code changed. Run again to unlock submit.'));
+els.adminLoginBtn.addEventListener('click', adminLoginApi);
+els.adminStartBtn.addEventListener('click', () => adminRoundAction('start'));
+els.adminPauseBtn.addEventListener('click', () => adminRoundAction('pause'));
+els.adminResumeBtn.addEventListener('click', () => adminRoundAction('resume'));
+els.adminEndBtn.addEventListener('click', () => adminRoundAction('end'));
 els.clearBtn.addEventListener('click', () => {
   els.logs.textContent = '';
 });
 
 resetSubmitGate('Run once to unlock submit.');
+setRunSubmitState('idle');
 
 log('prototype loaded');

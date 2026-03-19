@@ -1,7 +1,7 @@
 import { env } from '../config/env.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import { enqueueCompileJob } from '../queues/compileQueue.js';
-import { getCompetitionState } from './competitionStateService.js';
+import { assertCanAttemptQuestion } from './competitionEngine.js';
 import { HttpError } from '../utils/http.js';
 
 function validateRunPayload(payload) {
@@ -104,20 +104,14 @@ export async function submitRunJob(payload, auth) {
     code_length: normalized.code.length,
   });
 
-  const state = await getCompetitionState(env.COMPETITION_ID);
-  console.log('[run-service] competition state', {
+  const runtimeState = await assertCanAttemptQuestion(normalized.roundId, normalized.questionId);
+  console.log('[run-service] competition runtime state', {
     competition_id: env.COMPETITION_ID,
-    round_status: state.round.status,
-    active_round_id: state.round.round_id,
+    round_status: runtimeState.status,
+    phase: runtimeState.phase,
+    active_round_id: runtimeState.roundId,
+    current_question_index: runtimeState.currentQuestionIndex,
   });
-
-  if (state.round.status !== 'ACTIVE') {
-    throw new HttpError(409, 'Round is not active');
-  }
-
-  if (state.round.round_id && normalized.roundId !== state.round.round_id) {
-    throw new HttpError(400, 'roundId does not match active round');
-  }
 
   const question = await getQuestionForRun(normalized.questionId, normalized.roundId);
 

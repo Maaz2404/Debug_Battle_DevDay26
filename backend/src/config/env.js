@@ -28,7 +28,13 @@ export const env = {
   SUPABASE_PUBLISHABLE_KEY: supabasePublishableKey,
   COMPETITION_ID: requireEnv('COMPETITION_ID'),
   ALLOWED_ORIGIN: process.env.ALLOWED_ORIGIN || '*',
+  ALLOWED_ORIGINS: (process.env.ALLOWED_ORIGIN || '*')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
   ADMIN_EMAILS: process.env.ADMIN_EMAILS || '',
+  QUESTION_GAP_SECONDS: Number(process.env.QUESTION_GAP_SECONDS || 30),
+  LEADERBOARD_BROADCAST_INTERVAL_MS: Number(process.env.LEADERBOARD_BROADCAST_INTERVAL_MS || 1000),
   ONECOMPILER_API_URL: process.env.ONECOMPILER_API_URL,
   ONECOMPILER_API_KEY: process.env.ONECOMPILER_API_KEY,
   REDIS_URL: process.env.REDIS_URL,
