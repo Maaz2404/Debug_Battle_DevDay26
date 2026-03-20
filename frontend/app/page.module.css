@@ -1,0 +1,154 @@
+.page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1rem;
+}
+
+.card {
+  width: 100%;
+  max-width: 28rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+  background: var(--surface-1);
+  box-shadow: 0 25px 50px -12px rgb(8 47 73 / 0.2);
+  padding: 1.75rem;
+  min-width: 0;
+}
+
+.bypassInfo {
+  margin-top: 1.25rem;
+  border: 1px solid rgb(252 211 77 / 0.4);
+  border-radius: 0.5rem;
+  background: rgb(245 158 11 / 0.1);
+  color: rgb(254 243 199);
+  font-size: 0.75rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.head {
+  margin-top: 2rem;
+}
+
+.title {
+  color: var(--text-strong);
+  font-size: 1.5rem;
+  font-weight: 900;
+}
+
+.subtitle {
+  margin-top: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.form {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+.label {
+  margin-bottom: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  word-break: break-word;
+}
+
+.input {
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.5rem;
+  background: var(--surface-3);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  outline: none;
+  padding: 0.5rem 0.75rem;
+  transition: border-color 120ms ease;
+}
+
+.input:focus {
+  border-color: var(--accent-soft-border);
+}
+
+.error {
+  margin-top: 0.25rem;
+  color: rgb(253 164 175);
+  font-size: 0.75rem;
+}
+
+.generalError {
+  border-radius: 0.5rem;
+  background: rgb(244 63 94 / 0.1);
+  color: rgb(254 205 211);
+  font-size: 0.75rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.submit {
+  width: 100%;
+  border: none;
+  border-radius: 0.5rem;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 0.625rem 1rem;
+  text-transform: uppercase;
+  transition: background-color 120ms ease;
+}
+
+.submit:hover {
+  background: var(--accent-hover);
+}
+
+.submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.demo {
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.5rem;
+  background: var(--surface-3);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 0.625rem 1rem;
+  text-transform: uppercase;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+
+.demo:hover {
+  border-color: var(--accent-soft-border);
+  color: var(--accent-soft-text);
+}
+
+.adminWrap {
+  margin-top: 1.25rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.adminLink {
+  color: var(--accent-soft-text);
+  transition: color 120ms ease;
+}
+
+.adminLink:hover {
+  color: var(--accent-hover);
+}

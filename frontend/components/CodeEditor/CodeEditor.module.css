@@ -1,0 +1,48 @@
+.container {
+  position: relative;
+  min-height: 420px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  background: var(--surface-2);
+}
+
+.editorArea {
+  height: calc(100vh - 5rem);
+}
+
+.resizeBar {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  height: 14px;
+  place-items: center;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-3);
+  cursor: ns-resize;
+  padding: 0;
+}
+
+.resizeIndicator {
+  width: 64px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--accent-soft-border);
+}
+
+.resizeBar:hover .resizeIndicator {
+  background: var(--accent);
+}
+
+:global(html[data-theme="light"]) .container {
+  border-color: var(--border-subtle);
+  background: var(--surface-3);
+}
+
+:global(html[data-theme="light"]) .resizeBar {
+  border-top-color: var(--border-subtle);
+  background: var(--surface-1);
+}

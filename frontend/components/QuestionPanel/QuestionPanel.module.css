@@ -1,0 +1,113 @@
+.empty {
+  border: 1px dashed var(--border-strong);
+  border-radius: 0.75rem;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  padding: 1.5rem;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  padding: 1.5rem;
+  height: 100%;
+}
+
+.problemLabel {
+  color: var(--accent-soft-text);
+  font-size: 0.75rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin-top: 0.5rem;
+  color: var(--text-strong);
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.sectionTitle {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.description {
+  margin-top: 0.5rem;
+  white-space: pre-wrap;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+}
+
+.samples {
+  display: grid;
+  gap: 1rem;
+}
+
+.sampleCode {
+  margin-top: 0.5rem;
+  overflow-x: auto;
+  border-radius: 0.5rem;
+  background: var(--surface-3);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  padding: 0.75rem;
+}
+
+.constraints {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.constraintItem {
+  border-radius: 0.25rem;
+  background: var(--surface-3);
+  padding: 0.25rem 0.5rem;
+}
+
+@media (min-width: 768px) {
+  .samples {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+:global(html[data-theme="light"]) .empty {
+  border-color: var(--border-strong);
+  background: var(--surface-1);
+  color: var(--text-muted);
+}
+
+:global(html[data-theme="light"]) .panel {
+  border-color: var(--border-subtle);
+  background: var(--surface-1);
+  color: var(--text-primary);
+}
+
+:global(html[data-theme="light"]) .title {
+  color: var(--text-strong);
+}
+
+:global(html[data-theme="light"]) .sectionTitle,
+:global(html[data-theme="light"]) .description,
+:global(html[data-theme="light"]) .constraints {
+  color: var(--text-primary);
+}
+
+:global(html[data-theme="light"]) .sampleCode,
+:global(html[data-theme="light"]) .constraintItem {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}

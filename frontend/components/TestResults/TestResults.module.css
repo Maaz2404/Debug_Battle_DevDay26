@@ -1,0 +1,119 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  background: var(--surface-2);
+  padding: 1rem;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.badge {
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.75rem;
+}
+
+.passed {
+  background: var(--success-soft-bg);
+  color: var(--success-soft-text);
+}
+
+.failed {
+  background: var(--danger-soft-bg);
+  color: var(--danger-soft-text);
+}
+
+.empty {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.case {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+  border-radius: 0.5rem;
+  background: var(--surface-3);
+  font-size: 0.75rem;
+  padding: 0.75rem;
+}
+
+.caseLabel {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.casePass {
+  color: var(--success-soft-text);
+}
+
+.caseFail {
+  color: var(--danger-soft-text);
+}
+
+.caseText {
+  color: var(--text-primary);
+}
+
+.verdict {
+  border: 1px solid var(--accent-soft-border);
+  border-radius: 0.5rem;
+  background: var(--accent-soft-bg);
+  color: var(--accent-soft-text);
+  font-size: 0.875rem;
+  padding: 0.75rem;
+}
+
+.verdictTitle {
+  font-weight: 600;
+}
+
+@media (min-width: 768px) {
+  .case {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+:global(html[data-theme="light"]) .panel {
+  border-color: var(--border-subtle);
+  background: var(--surface-1);
+}
+
+:global(html[data-theme="light"]) .title {
+  color: var(--text-muted);
+}
+
+:global(html[data-theme="light"]) .empty,
+:global(html[data-theme="light"]) .caseText {
+  color: var(--text-primary);
+}
+
+:global(html[data-theme="light"]) .case {
+  background: var(--surface-3);
+}
+
+:global(html[data-theme="light"]) .caseLabel {
+  color: var(--text-strong);
+}
+
+:global(html[data-theme="light"]) .verdict {
+  border-color: var(--accent-soft-border);
+  background: var(--accent-soft-bg);
+  color: var(--accent-soft-text);
+}

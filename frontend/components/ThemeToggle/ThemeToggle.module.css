@@ -1,0 +1,60 @@
+.button {
+  position: relative;
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-1);
+  color: var(--warning);
+  cursor: pointer;
+  transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+  margin: auto;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.button:hover {
+  transform: translateY(-1px);
+  border-color: var(--warning);
+}
+
+.button:focus-visible {
+  outline: 3px solid rgb(14 165 233 / 0.42);
+  outline-offset: 2px;
+}
+
+.iconWrap {
+  position: relative;
+  width: 22px;
+  height: 22px;
+}
+
+.icon {
+  position: absolute;
+  inset: 0;
+  width: 22px;
+  height: 22px;
+  transition: opacity 160ms ease, transform 220ms ease;
+}
+
+.sunIn {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+}
+
+.sunOut {
+  opacity: 0;
+  transform: rotate(-40deg) scale(0.7);
+}
+
+.moonIn {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+}
+
+.moonOut {
+  opacity: 0;
+  transform: rotate(40deg) scale(0.7);
+}

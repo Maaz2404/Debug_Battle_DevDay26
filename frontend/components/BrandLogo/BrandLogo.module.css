@@ -1,0 +1,49 @@
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.badge {
+  position: relative;
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  border: 1px solid var(--accent-soft-border);
+  background: var(--accent-soft-bg);
+}
+
+.glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at top, rgb(34 211 238 / 0.32), transparent 65%);
+}
+
+.letter {
+  z-index: 1;
+  font-size: 1.125rem;
+  font-weight: 900;
+  color: var(--accent-soft-text);
+}
+
+.textWrap {
+  display: inline-flex;
+  flex-direction: column;
+}
+
+.title {
+  display: block;
+  font-size: 0.875rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent-soft-text);
+}
+
+.subtitle {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
