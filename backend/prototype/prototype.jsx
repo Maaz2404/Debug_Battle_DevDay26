@@ -135,6 +135,31 @@ function renderLeaderboard(payload) {
   };
 }
 
+function renderCompetitionState(payload) {
+  const data = payload?.data || payload;
+  const round = data?.round || {};
+  const leaderboard = Array.isArray(data?.leaderboard) ? data.leaderboard : [];
+
+  return {
+    competition_id: data?.competition_id || null,
+    round: {
+      status: round?.status || null,
+      phase: round?.phase || null,
+      round_id: round?.round_id || null,
+      round_number: round?.round_number ?? null,
+      current_question_index: round?.current_question_index ?? null,
+      current_question_id: round?.current_question_id || null,
+      time_remaining_seconds: round?.time_remaining_seconds ?? null,
+    },
+    leaderboard_top: leaderboard.slice(0, 10).map((row) => ({
+      rank: row.rank,
+      team_id: row.team_id,
+      team_name: row.team_name,
+      total_score: row.total_score,
+    })),
+  };
+}
+
 async function login() {
   const base = getBaseUrl();
   const teamName = els.teamName.value.trim();
@@ -211,7 +236,10 @@ async function fetchState() {
       headers: { Authorization: `Bearer ${token}` },
     });
     const json = await res.json();
-    log('competition state response', { status: res.status, body: json });
+    log('competition state response', {
+      status: res.status,
+      body: renderCompetitionState(json),
+    });
   } catch (error) {
     log('competition state error', { message: String(error) });
   }
@@ -432,6 +460,8 @@ function connectSocket() {
   const eventNames = [
     'competition:state',
     'round:start',
+    'round:paused',
+    'round:resumed',
     'question:next',
     'round:end',
     'submission:result',
@@ -505,8 +535,14 @@ function connectSocket() {
     log('socket event: leaderboard:update', renderLeaderboard(payload));
   });
 
+  socket.on('competition:state', (payload) => {
+    log('socket event: competition:state', renderCompetitionState(payload));
+  });
+
   for (const eventName of eventNames) {
-    if (eventName === 'submission:result' || eventName === 'leaderboard:update') {
+    if (eventName === 'submission:result'
+      || eventName === 'leaderboard:update'
+      || eventName === 'competition:state') {
       continue;
     }
     socket.on(eventName, (payload) => {

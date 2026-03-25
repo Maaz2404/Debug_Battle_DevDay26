@@ -317,6 +317,28 @@ async function emitRoundEnd(state) {
   });
 }
 
+async function emitRoundPaused(state) {
+  emitToRoom(getCompetitionRoom(), 'round:paused', {
+    round_id: state.roundId,
+    round_number: state.roundNumber,
+    status: 'PAUSED',
+    phase: state.phase,
+    index: state.currentQuestionIndex,
+    time_remaining_seconds: Math.max(0, Math.floor((state.pausedRemainingMs || 0) / 1000)),
+  });
+}
+
+async function emitRoundResumed(state) {
+  emitToRoom(getCompetitionRoom(), 'round:resumed', {
+    round_id: state.roundId,
+    round_number: state.roundNumber,
+    status: 'ACTIVE',
+    phase: state.phase,
+    index: state.currentQuestionIndex,
+    time_remaining_seconds: Math.max(0, Math.ceil((state.nextTransitionAt - Date.now()) / 1000)),
+  });
+}
+
 async function scheduleNextTransition(state) {
   clearRoundTimer(state.roundId);
 
@@ -443,6 +465,7 @@ export async function pauseRoundByNumber(roundNumber) {
   await writeRoundRuntimeState(state);
   await persistRoundLiveKeys(state);
   clearRoundTimer(round.id);
+  await emitRoundPaused(state);
 
   return round;
 }
@@ -466,6 +489,7 @@ export async function resumeRoundByNumber(roundNumber) {
   await updateRoundStatus(round.id, { status: 'ACTIVE' });
   await writeRoundRuntimeState(state);
   await persistRoundLiveKeys(state);
+  await emitRoundResumed(state);
   await scheduleNextTransition(state);
 
   return round;
