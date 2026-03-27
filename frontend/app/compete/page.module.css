@@ -45,6 +45,30 @@
   max-width: 100%;
 }
 
+.logoutButton {
+  border: 1px solid var(--border-strong);
+  border-radius: 0.5rem;
+  background: var(--surface-3);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 0.35rem 0.65rem;
+  text-transform: uppercase;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+
+.logoutButton:hover {
+  border-color: var(--accent-soft-border);
+  color: var(--accent-soft-text);
+}
+
+.logoutButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .warningWrap {
   margin: 1rem auto 0;
   display: flex;
@@ -188,6 +212,11 @@
 
   .mainGrid {
     padding: 1rem 1.5rem;
+  }
+
+  .logoutButton {
+    font-size: 0.8125rem;
+    padding: 0.4rem 0.8rem;
   }
 }
 

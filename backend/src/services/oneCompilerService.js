@@ -4,6 +4,25 @@ import { HttpError } from '../utils/http.js';
 
 const RAPID_HOST = 'onecompiler-apis.p.rapidapi.com';
 
+function isRapidApiUrl(url) {
+  return String(url || '').toLowerCase().includes('rapidapi.com');
+}
+
+function buildHeaders() {
+  if (isRapidApiUrl(env.ONECOMPILER_API_URL)) {
+    return {
+      'x-rapidapi-key': env.ONECOMPILER_API_KEY,
+      'x-rapidapi-host': RAPID_HOST,
+      'Content-Type': 'application/json',
+    };
+  }
+
+  return {
+    'X-API-Key': env.ONECOMPILER_API_KEY,
+    'Content-Type': 'application/json',
+  };
+}
+
 function languageToFileName(language) {
   const map = {
     python: 'index.py',
@@ -18,18 +37,40 @@ function languageToFileName(language) {
   return map[language] || 'main.txt';
 }
 
+function normalizeExecutionResult(result, stdinValue = '') {
+  const source = result || {};
+  return {
+    status: source.status || 'failed',
+    stdout: source.stdout ?? '',
+    stderr: source.stderr ?? null,
+    exception: source.exception ?? null,
+    error: source.error ?? null,
+    executionTime: Number(source.executionTime || 0),
+    compilationTime: Number(source.compilationTime || 0),
+    memoryUsed: Number(source.memoryUsed || 0),
+    stdin: source.stdin ?? stdinValue,
+  };
+}
+
 export async function runCodeOnOneCompiler({ language, code, stdin = '' }) {
   if (!env.ONECOMPILER_API_URL || !env.ONECOMPILER_API_KEY) {
     throw new HttpError(500, 'OneCompiler is not configured');
   }
+
+  const batchInput = Array.isArray(stdin);
 
   try {
     console.log('[onecompiler] request', {
       url: env.ONECOMPILER_API_URL,
       language,
       code_length: typeof code === 'string' ? code.length : null,
-      stdin_length: typeof stdin === 'string' ? stdin.length : null,
+      stdin_type: batchInput ? 'array' : typeof stdin,
+      stdin_count: batchInput ? stdin.length : 1,
+      stdin_length: batchInput
+        ? stdin.reduce((sum, item) => sum + String(item ?? '').length, 0)
+        : (typeof stdin === 'string' ? stdin.length : null),
     });
+
     const response = await axios.post(
       env.ONECOMPILER_API_URL,
       {
@@ -44,11 +85,7 @@ export async function runCodeOnOneCompiler({ language, code, stdin = '' }) {
       },
       {
         timeout: 15000,
-        headers: {
-          'x-rapidapi-key': env.ONECOMPILER_API_KEY,
-          'x-rapidapi-host': RAPID_HOST,
-          'Content-Type': 'application/json',
-        },
+        headers: buildHeaders(),
       },
     );
 
@@ -58,7 +95,14 @@ export async function runCodeOnOneCompiler({ language, code, stdin = '' }) {
       : JSON.stringify(response.data).slice(0, 2000);
     console.log('[onecompiler] response', { status: response.status, data: safeData });
 
-    return response.data;
+    if (batchInput) {
+      const rows = Array.isArray(response.data)
+        ? response.data
+        : [response.data];
+      return rows.map((row, index) => normalizeExecutionResult(row, stdin[index] ?? ''));
+    }
+
+    return normalizeExecutionResult(response.data, stdin);
   } catch (error) {
     console.error('[onecompiler] request error', {
       message: error.message,

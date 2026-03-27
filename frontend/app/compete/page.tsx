@@ -7,11 +7,14 @@ import { CodeEditor } from "@/components/CodeEditor";
 import { CompetitionNav } from "@/components/CompetitionNav";
 import { ConnectionStatusBadge } from "@/components/ConnectionStatusBadge";
 import { HeaderBar } from "@/components/HeaderBar";
+import { LogoutButton } from "@/components/LogoutButton";
 import { QuestionPanel } from "@/components/QuestionPanel";
 import { TestResults } from "@/components/TestResults";
 import { Timer } from "@/components/Timer";
+import { useLogout } from "@/hooks/useLogout";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { apiClient } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/http";
 import { useAppStore } from "@/lib/store/useAppStore";
 import type { Language } from "@/lib/types";
 import styles from "./page.module.css";
@@ -34,9 +37,52 @@ function formatClock(endsAt: number | null, now: number) {
   return `${minutes}:${seconds}`;
 }
 
+function getRunErrorMessage(error: unknown) {
+  if (error instanceof ApiError) {
+    if (error.status === 403) {
+      return "Run is not allowed right now. Wait for the active question window.";
+    }
+    if (error.status === 409) {
+      return "Round or question state changed. Refreshing state and retry run.";
+    }
+    if (error.status === 429) {
+      return "Too many requests. Please wait a moment and run again.";
+    }
+    return error.message || "Run failed due to a server error.";
+  }
+
+  if (error instanceof Error && /timed out waiting/i.test(error.message)) {
+    return "Run result timed out. Check connection and retry.";
+  }
+
+  return "Run failed. Please retry.";
+}
+
+function getSubmitErrorMessage(error: unknown) {
+  if (error instanceof ApiError) {
+    if (error.status === 403) {
+      return "Submit blocked: pass Run first for this question.";
+    }
+    if (error.status === 409) {
+      return "Question window changed. Submit is no longer valid for this question.";
+    }
+    if (error.status === 429) {
+      return "Duplicate or too-frequent submit detected. Please wait and try again.";
+    }
+    return error.message || "Submission failed due to a server error.";
+  }
+
+  if (error instanceof Error && /timed out waiting/i.test(error.message)) {
+    return "Submission result timed out. Check connection and retry.";
+  }
+
+  return "Submission failed. Please retry.";
+}
+
 export default function CompetePage() {
   const router = useRouter();
   const user = useRequireAuth();
+  const { logout, loggingOut } = useLogout();
   const [now, setNow] = useState(() => Date.now());
 
   const {
@@ -49,6 +95,8 @@ export default function CompetePage() {
     submissionResult,
     isRunning,
     isSubmitting,
+    pendingRunSubmissionId,
+    pendingSubmitSubmissionId,
     showThirtySecondWarning,
     setRunResult,
     setSubmissionResult,
@@ -56,6 +104,8 @@ export default function CompetePage() {
     setCodeDraft,
     setIsRunning,
     setIsSubmitting,
+    setPendingRunSubmissionId,
+    setPendingSubmitSubmissionId,
     setThirtySecondWarning,
   } = useAppStore((state) => state);
 
@@ -85,6 +135,97 @@ export default function CompetePage() {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    if (connectionStatus !== "disconnected") {
+      return;
+    }
+
+    if (!pendingRunSubmissionId && !pendingSubmitSubmissionId) {
+      return;
+    }
+
+    let disposed = false;
+
+    const timeout = window.setTimeout(() => {
+      void (async () => {
+        if (disposed) {
+          return;
+        }
+
+        if (pendingRunSubmissionId) {
+          let recovered = false;
+          if (user?.token) {
+            try {
+              const result = await apiClient.recoverRunResult(user.token, pendingRunSubmissionId);
+              if (!disposed && result) {
+                setRunResult(result);
+                recovered = true;
+              }
+            } catch {
+              recovered = false;
+            }
+          }
+
+          if (!disposed) {
+            setPendingRunSubmissionId(null);
+            setIsRunning(false);
+            if (!recovered) {
+              setRunResult({
+                passed: false,
+                output: "",
+                error: "Connection lost while waiting for run result. Please run again.",
+                testCases: [],
+              });
+            }
+          }
+        }
+
+        if (pendingSubmitSubmissionId) {
+          let recovered = false;
+          if (user?.token) {
+            try {
+              const result = await apiClient.recoverSubmissionResult(user.token, pendingSubmitSubmissionId);
+              if (!disposed && result) {
+                setSubmissionResult(result);
+                recovered = true;
+              }
+            } catch {
+              recovered = false;
+            }
+          }
+
+          if (!disposed) {
+            setPendingSubmitSubmissionId(null);
+            setIsSubmitting(false);
+            if (!recovered) {
+              setSubmissionResult({
+                verdict: "RUNTIME_ERROR",
+                scoreDelta: 0,
+                message: "Connection lost while waiting for submission result. Please submit again.",
+              });
+            }
+          }
+        }
+      })();
+    }, 4000);
+
+    return () => {
+      disposed = true;
+      window.clearTimeout(timeout);
+    };
+  }, [
+    connectionStatus,
+    pendingRunSubmissionId,
+    pendingSubmitSubmissionId,
+    user?.token,
+    setIsRunning,
+    setIsSubmitting,
+    setPendingRunSubmissionId,
+    setPendingSubmitSubmissionId,
+    setRunResult,
+    setSubmissionResult,
+  ]);
+
   const handleRun = useCallback(async () => {
     if (!user?.token || !currentQuestion) {
       return;
@@ -92,25 +233,38 @@ export default function CompetePage() {
 
     setIsRunning(true);
     setRunResult(null);
+    setPendingRunSubmissionId(null);
 
     try {
-      const result = await apiClient.runCode(user.token, {
+      const { submissionId } = await apiClient.requestRun(user.token, {
         questionId: currentQuestion.id,
         language,
         code: codeDraft,
       });
+
+      setPendingRunSubmissionId(submissionId);
+      const result = await apiClient.waitForRunResult(submissionId);
       setRunResult(result);
-    } catch {
+    } catch (error) {
       setRunResult({
         passed: false,
         output: "",
-        error: "Run failed. Please retry.",
+        error: getRunErrorMessage(error),
         testCases: [],
       });
     } finally {
+      setPendingRunSubmissionId(null);
       setIsRunning(false);
     }
-  }, [codeDraft, currentQuestion, language, setIsRunning, setRunResult, user?.token]);
+  }, [
+    codeDraft,
+    currentQuestion,
+    language,
+    setIsRunning,
+    setPendingRunSubmissionId,
+    setRunResult,
+    user?.token,
+  ]);
 
   const canSubmit = useMemo(() => !!runResult?.passed && !isRunning && !isSubmitting, [isRunning, isSubmitting, runResult?.passed]);
 
@@ -120,24 +274,38 @@ export default function CompetePage() {
     }
 
     setIsSubmitting(true);
+    setPendingSubmitSubmissionId(null);
 
     try {
-      const result = await apiClient.submitCode(user.token, {
+      const { submissionId } = await apiClient.requestSubmit(user.token, {
         questionId: currentQuestion.id,
         language,
         code: codeDraft,
       });
+
+      setPendingSubmitSubmissionId(submissionId);
+      const result = await apiClient.waitForSubmissionResult(submissionId);
       setSubmissionResult(result);
-    } catch {
+    } catch (error) {
       setSubmissionResult({
         verdict: "RUNTIME_ERROR",
         scoreDelta: 0,
-        message: "Submission failed. Please retry.",
+        message: getSubmitErrorMessage(error),
       });
     } finally {
+      setPendingSubmitSubmissionId(null);
       setIsSubmitting(false);
     }
-  }, [canSubmit, codeDraft, currentQuestion, language, setIsSubmitting, setSubmissionResult, user?.token]);
+  }, [
+    canSubmit,
+    codeDraft,
+    currentQuestion,
+    language,
+    setIsSubmitting,
+    setPendingSubmitSubmissionId,
+    setSubmissionResult,
+    user?.token,
+  ]);
 
   return (
     <div className={styles.page}>
@@ -166,6 +334,7 @@ export default function CompetePage() {
         right={
           <div className={styles.headerRight}>
             <ConnectionStatusBadge status={connectionStatus} />
+            <LogoutButton className={styles.logoutButton} onClick={logout} loading={loggingOut} />
             <CompetitionNav />
           </div>
         }

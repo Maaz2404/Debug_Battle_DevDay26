@@ -6,7 +6,10 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { ConnectionStatusBadge } from "@/components/ConnectionStatusBadge";
 import { CountdownOverlay } from "@/components/CountdownOverlay";
 import { HeaderBar } from "@/components/HeaderBar";
+import { LogoutButton } from "@/components/LogoutButton";
+import { useLogout } from "@/hooks/useLogout";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
+import { REAL_BACKEND_ENABLED } from "@/lib/config/runtime";
 import { useAppStore } from "@/lib/store/useAppStore";
 import styles from "./page.module.css";
 
@@ -28,6 +31,7 @@ export default function LobbyPage() {
   const router = useRouter();
   const user = useRequireAuth();
   const [now, setNow] = useState(() => Date.now());
+  const { logout, loggingOut } = useLogout();
   const competition = useAppStore((state) => state.competition);
   const connectionStatus = useAppStore((state) => state.connectionStatus);
   const countdownValue = useAppStore((state) => state.countdownValue);
@@ -49,6 +53,10 @@ export default function LobbyPage() {
   }, []);
 
   useEffect(() => {
+    if (REAL_BACKEND_ENABLED) {
+      return;
+    }
+
     if (!competition || competition.status !== "IDLE" || !competition.nextQuestionAt) {
       return;
     }
@@ -91,7 +99,12 @@ export default function LobbyPage() {
     <div className={styles.page}>
       <HeaderBar
         left={<BrandLogo href="/lobby" compact />}
-        right={<ConnectionStatusBadge status={connectionStatus} />}
+        right={(
+          <div className={styles.headerActions}>
+            <ConnectionStatusBadge status={connectionStatus} />
+            <LogoutButton className={styles.logoutButton} onClick={logout} loading={loggingOut} />
+          </div>
+        )}
       />
 
       <main className={styles.main}>

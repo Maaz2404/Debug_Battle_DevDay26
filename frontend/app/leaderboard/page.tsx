@@ -7,7 +7,9 @@ import { CompetitionNav } from "@/components/CompetitionNav";
 import { ConnectionStatusBadge } from "@/components/ConnectionStatusBadge";
 import { HeaderBar } from "@/components/HeaderBar";
 import { LeaderboardTable } from "@/components/LeaderboardTable";
-import { apiClient } from "@/lib/api/client";
+import { LogoutButton } from "@/components/LogoutButton";
+import { useLogout } from "@/hooks/useLogout";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAppStore } from "@/lib/store/useAppStore";
 import styles from "./page.module.css";
 
@@ -30,27 +32,14 @@ function formatClock(endsAt: number | null, now: number) {
 export default function LeaderboardPage() {
   const params = useSearchParams();
   const fullscreen = params.get("display") === "fullscreen";
+  useRequireAuth();
+  const { logout, loggingOut } = useLogout();
   const [now, setNow] = useState(() => Date.now());
 
   const leaderboard = useAppStore((state) => state.leaderboard);
   const competition = useAppStore((state) => state.competition);
   const user = useAppStore((state) => state.user);
   const connectionStatus = useAppStore((state) => state.connectionStatus);
-  const setLeaderboard = useAppStore((state) => state.setLeaderboard);
-
-  useEffect(() => {
-    let mounted = true;
-
-    apiClient.getLeaderboard().then((entries) => {
-      if (mounted) {
-        setLeaderboard(entries);
-      }
-    });
-
-    return () => {
-      mounted = false;
-    };
-  }, [setLeaderboard]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -89,6 +78,7 @@ export default function LeaderboardPage() {
         right={
           <div className={styles.headerRight}>
             <ConnectionStatusBadge status={connectionStatus} />
+            <LogoutButton className={styles.logoutButton} onClick={logout} loading={loggingOut} />
             <CompetitionNav />
           </div>
         }

@@ -6,6 +6,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { HeaderBar } from "@/components/HeaderBar";
 import { apiClient, createDemoLoginResponse } from "@/lib/api/client";
+import { REAL_BACKEND_ENABLED } from "@/lib/config/runtime";
 import { useAppStore } from "@/lib/store/useAppStore";
 import styles from "./page.module.css";
 
@@ -13,6 +14,7 @@ export default function LoginPage() {
   const router = useRouter();
   const user = useAppStore((state) => state.user);
   const competition = useAppStore((state) => state.competition);
+  const clearSession = useAppStore((state) => state.clearSession);
   const setUser = useAppStore((state) => state.setUser);
   const setCompetition = useAppStore((state) => state.setCompetition);
   const resetQuestionState = useAppStore((state) => state.resetQuestionState);
@@ -27,13 +29,19 @@ export default function LoginPage() {
       return;
     }
 
+    // If a demo token was persisted previously, drop it in real mode so login page is shown.
+    if (REAL_BACKEND_ENABLED && user.token.startsWith("mock-")) {
+      clearSession();
+      return;
+    }
+
     if (competition?.status === "ACTIVE") {
       router.replace("/compete");
       return;
     }
 
     router.replace("/lobby");
-  }, [competition?.status, router, user?.token]);
+  }, [clearSession, competition?.status, router, user?.token]);
 
   const canSubmit = useMemo(() => teamCode.trim().length > 0 && participantName.trim().length > 0, [participantName, teamCode]);
 
@@ -45,7 +53,7 @@ export default function LoginPage() {
       nextErrors.teamCode = "Team code is required.";
     }
     if (!participantName.trim()) {
-      nextErrors.participantName = "Your name is required.";
+      nextErrors.participantName = REAL_BACKEND_ENABLED ? "Password is required." : "Your name is required.";
     }
 
     if (Object.keys(nextErrors).length > 0) {
@@ -97,11 +105,17 @@ export default function LoginPage() {
       <section className={styles.card}>
         <BrandLogo compact={false} />
 
-        <div className={styles.bypassInfo}>Frontend demo mode active. No backend connection is required.</div>
+        {!REAL_BACKEND_ENABLED ? (
+          <div className={styles.bypassInfo}>Frontend demo mode active. No backend connection is required.</div>
+        ) : null}
 
         <div className={styles.head}>
           <h1 className={styles.title}>Join Competition</h1>
-          <p className={styles.subtitle}>Enter your team code and name to enter the live coding arena.</p>
+          <p className={styles.subtitle}>
+            {REAL_BACKEND_ENABLED
+              ? "Enter your team code and password to enter the live coding arena."
+              : "Enter your team code and name to enter the live coding arena."}
+          </p>
         </div>
 
         <form className={styles.form} onSubmit={handleSubmit}>
@@ -122,15 +136,15 @@ export default function LoginPage() {
 
           <div className={styles.fieldGroup}>
             <label htmlFor="participantName" className={styles.label}>
-              Your Name
+              {REAL_BACKEND_ENABLED ? "Password" : "Your Name"}
             </label>
             <input
               id="participantName"
-              type="text"
+              type={REAL_BACKEND_ENABLED ? "password" : "text"}
               value={participantName}
               onChange={(event) => setParticipantName(event.target.value)}
               className={styles.input}
-              placeholder="Your display name"
+              placeholder={REAL_BACKEND_ENABLED ? "Your team password" : "Your display name"}
             />
             {errors.participantName ? <p className={styles.error}>{errors.participantName}</p> : null}
           </div>
@@ -145,13 +159,15 @@ export default function LoginPage() {
             {submitting ? "Joining..." : "Join Competition"}
           </button>
 
-          <button
-            type="button"
-            onClick={enterDemoMode}
-            className={styles.demo}
-          >
-            Enter Demo Without Login
-          </button>
+          {!REAL_BACKEND_ENABLED ? (
+            <button
+              type="button"
+              onClick={enterDemoMode}
+              className={styles.demo}
+            >
+              Enter Demo Without Login
+            </button>
+          ) : null}
         </form>
 
         <div className={styles.adminWrap}>

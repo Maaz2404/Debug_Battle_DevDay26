@@ -26,6 +26,9 @@ export function TestResults({ runResult, submissionResult }: TestResultsProps) {
 
       {!runResult ? <p className={styles.empty}>Run your code to see testcase diagnostics.</p> : null}
 
+      {runResult?.error ? <p className={styles.caseText}>{runResult.error}</p> : null}
+      {runResult?.output ? <p className={styles.caseText}>{runResult.output}</p> : null}
+
       {runResult?.testCases.map((test) => (
         <div key={test.id} className={styles.case}>
           <div className={styles.caseLabel}>{test.label}</div>

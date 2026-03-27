@@ -5,8 +5,8 @@ import {
   startRoundByNumber as startRoundWithEngine,
 } from './competitionEngine.js';
 
-export async function startRoundByNumber(roundNumber) {
-  return startRoundWithEngine(roundNumber);
+export async function startRoundByNumber(roundNumber, options = {}) {
+  return startRoundWithEngine(roundNumber, options);
 }
 
 export async function pauseRoundByNumber(roundNumber) {

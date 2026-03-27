@@ -5,6 +5,7 @@ import { emitToRoom } from '../socket/registry.js';
 import { HttpError } from '../utils/http.js';
 
 const activeRoundTimers = new Map();
+const scheduledRoundStartTimers = new Map();
 
 function parseRoundNumber(roundNumber) {
   const parsed = Number(roundNumber);
@@ -20,6 +21,10 @@ function getCompetitionRoom() {
 
 function getCompetitionStateKey() {
   return `comp:${env.COMPETITION_ID}:state`;
+}
+
+function getScheduledStartKey() {
+  return `comp:${env.COMPETITION_ID}:scheduled_start`;
 }
 
 function getRoundStatusKey(roundId) {
@@ -150,11 +155,15 @@ async function buildRoundEndSnapshot(roundId) {
 
 async function storeRoundSnapshot(roundId) {
   const snapshot = await buildRoundEndSnapshot(roundId);
+  const competitionIdNumber = Number(env.COMPETITION_ID);
+  if (!Number.isFinite(competitionIdNumber)) {
+    throw new HttpError(500, 'Failed to store leaderboard snapshot', 'COMPETITION_ID must be numeric');
+  }
 
   const { error } = await supabaseAdmin
     .from('leaderboard_snapshots')
     .insert({
-      competition_id: env.COMPETITION_ID,
+      competition_id: competitionIdNumber,
       round_id: roundId,
       snapshot,
     });
@@ -177,11 +186,84 @@ async function cleanupRunpassForRound(roundId) {
   } while (cursor !== '0');
 }
 
+async function cleanupLiveProgressForRound(roundId) {
+  const pattern = `live:progress:${roundId}:*`;
+  let cursor = '0';
+
+  do {
+    const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+    cursor = nextCursor;
+    if (keys.length > 0) {
+      await redis.del(...keys);
+    }
+  } while (cursor !== '0');
+}
+
+async function cleanupDedupForQuestionIds(questionIds) {
+  const uniqueQuestionIds = [...new Set((questionIds || []).map((value) => String(value || '')))].filter(Boolean);
+  for (const questionId of uniqueQuestionIds) {
+    const pattern = `dedup:*:${questionId}`;
+    let cursor = '0';
+
+    do {
+      const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+      cursor = nextCursor;
+      if (keys.length > 0) {
+        await redis.del(...keys);
+      }
+    } while (cursor !== '0');
+  }
+}
+
+async function rebuildLeaderboardFromDatabase() {
+  const leaderboardKey = `leaderboard:${env.COMPETITION_ID}`;
+
+  const { data, error } = await supabaseAdmin
+    .from('submissions')
+    .select('team_id, total_score')
+    .eq('job_type', 'submit')
+    .eq('status', 'ACCEPTED');
+
+  if (error) {
+    throw new HttpError(500, 'Failed to rebuild leaderboard cache', error.message);
+  }
+
+  await redis.del(leaderboardKey);
+
+  const totalsByTeam = new Map();
+  for (const row of data || []) {
+    const teamId = String(row.team_id || '');
+    if (!teamId) {
+      continue;
+    }
+    const score = Number(row.total_score || 0);
+    totalsByTeam.set(teamId, (totalsByTeam.get(teamId) || 0) + score);
+  }
+
+  if (totalsByTeam.size === 0) {
+    return;
+  }
+
+  const pipeline = redis.pipeline();
+  for (const [teamId, totalScore] of totalsByTeam.entries()) {
+    pipeline.zadd(leaderboardKey, totalScore, teamId);
+  }
+  await pipeline.exec();
+}
+
 function clearRoundTimer(roundId) {
   const timer = activeRoundTimers.get(roundId);
   if (timer) {
     clearTimeout(timer);
     activeRoundTimers.delete(roundId);
+  }
+}
+
+function clearScheduledRoundStartTimer(roundId) {
+  const timer = scheduledRoundStartTimers.get(roundId);
+  if (timer) {
+    clearTimeout(timer);
+    scheduledRoundStartTimers.delete(roundId);
   }
 }
 
@@ -267,7 +349,7 @@ async function emitQuestionNext(state) {
   const questionId = state.questionIds[state.currentQuestionIndex];
   const { data, error } = await supabaseAdmin
     .from('questions')
-    .select('id, round_id, position, title, description, time_limit_seconds, base_score, test_cases')
+    .select('id, round_id, position, title, description, code, language, time_limit_seconds, base_score, test_cases')
     .eq('id', questionId)
     .maybeSingle();
 
@@ -295,7 +377,7 @@ async function emitRoundStart(state) {
   const questionId = state.questionIds[0];
   const { data: question } = await supabaseAdmin
     .from('questions')
-    .select('id, round_id, position, title, description, time_limit_seconds, base_score, test_cases')
+    .select('id, round_id, position, title, description, code, language, time_limit_seconds, base_score, test_cases')
     .eq('id', questionId)
     .maybeSingle();
 
@@ -406,15 +488,68 @@ async function advanceRoundTimeline(roundId) {
   }
 }
 
-export async function startRoundByNumber(roundNumber) {
+export async function startRoundByNumber(roundNumber, options = {}) {
   const round = await getRoundByNumber(roundNumber);
   if (round.status !== 'IDLE') {
     throw new HttpError(409, `Cannot start round in status ${round.status}`);
   }
 
+  if (scheduledRoundStartTimers.has(round.id)) {
+    throw new HttpError(409, 'Round start is already scheduled');
+  }
+
   const questions = await getRoundQuestions(round.id);
   const questionIds = questions.map((q) => q.id);
   const questionDurations = questions.map((q) => Number(q.time_limit_seconds || 180));
+  const startInSecondsRaw = Number(options.startInSeconds);
+  const startInSeconds = Number.isFinite(startInSecondsRaw) && startInSecondsRaw > 0
+    ? Math.floor(startInSecondsRaw)
+    : 0;
+
+  if (startInSeconds > 0) {
+    const scheduledStartAt = Date.now() + (startInSeconds * 1000);
+    await redis.hset(getScheduledStartKey(), {
+      round_id: round.id,
+      round_number: String(round.round_number),
+      start_at: String(scheduledStartAt),
+    });
+
+    emitToRoom(getCompetitionRoom(), 'round:scheduled', {
+      round_id: round.id,
+      round_number: round.round_number,
+      start_in_seconds: startInSeconds,
+      scheduled_start_at: scheduledStartAt,
+      duration_seconds: questionDurations.reduce((acc, secs) => acc + secs, 0)
+        + ((questionDurations.length - 1) * getQuestionGapSeconds()),
+    });
+
+    const timer = setTimeout(async () => {
+      try {
+        scheduledRoundStartTimers.delete(round.id);
+        await redis.del(getScheduledStartKey());
+        await startRoundByNumber(roundNumber, { startInSeconds: 0 });
+      } catch (error) {
+        console.error('[competition-engine] scheduled round start failed', {
+          roundId: round.id,
+          roundNumber,
+          message: error.message,
+        });
+      }
+    }, startInSeconds * 1000);
+
+    scheduledRoundStartTimers.set(round.id, timer);
+    return round;
+  }
+
+  await redis.del(getScheduledStartKey());
+  clearScheduledRoundStartTimer(round.id);
+
+  // Starting a round must never reuse stale runtime artifacts from previous attempts.
+  await cleanupRunpassForRound(round.id);
+  await cleanupLiveProgressForRound(round.id);
+  await cleanupDedupForQuestionIds(questionIds);
+  await rebuildLeaderboardFromDatabase();
+
   const now = Date.now();
   const gapSeconds = getQuestionGapSeconds();
 
@@ -502,6 +637,8 @@ export async function endRoundByNumber(roundNumber, reason = 'manual-end') {
   }
 
   clearRoundTimer(round.id);
+  clearScheduledRoundStartTimer(round.id);
+  await redis.del(getScheduledStartKey());
 
   await updateRoundStatus(round.id, {
     status: 'ENDED',
@@ -517,6 +654,12 @@ export async function endRoundByNumber(roundNumber, reason = 'manual-end') {
     await writeRoundRuntimeState(state);
     await persistRoundLiveKeys(state);
     await emitRoundEnd(state);
+
+    // Clear runtime keys so future state reads rely on DB and not stale ENDED runtime cache.
+    await redis.del(getCompetitionStateKey());
+    await redis.del(getRoundStatusKey(round.id));
+    await redis.del(getRoundStartKey(round.id));
+    await redis.del(getCurrentQuestionKey(round.id));
   }
 
   await cleanupRunpassForRound(round.id);

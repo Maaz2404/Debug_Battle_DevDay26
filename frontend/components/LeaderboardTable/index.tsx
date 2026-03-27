@@ -11,6 +11,8 @@ interface LeaderboardTableProps {
 }
 
 export function LeaderboardTable({ entries, fullscreen }: LeaderboardTableProps) {
+  const formatScore = (value: number | null) => (typeof value === "number" ? value : "-");
+
   return (
     <div className={clsx(styles.wrap, fullscreen && styles.fullscreen)}>
       <table className={styles.table}>
@@ -18,9 +20,9 @@ export function LeaderboardTable({ entries, fullscreen }: LeaderboardTableProps)
           <tr>
             <th className={styles.cellHead}>Rank</th>
             <th className={styles.cellHead}>Team</th>
-            <th className={styles.cellHeadRight}>R1</th>
-            <th className={styles.cellHeadRight}>R2</th>
-            <th className={styles.cellHeadRight}>R3</th>
+            <th className={styles.cellHeadRight}>Q1</th>
+            <th className={styles.cellHeadRight}>Q2</th>
+            <th className={styles.cellHeadRight}>Q3</th>
             <th className={styles.cellHeadRight}>Total</th>
           </tr>
         </thead>
@@ -39,9 +41,9 @@ export function LeaderboardTable({ entries, fullscreen }: LeaderboardTableProps)
             >
               <td className={styles.rank}>#{entry.rank}</td>
               <td className={styles.team}>{entry.teamName}</td>
-              <td className={styles.score}>{entry.scores.r1}</td>
-              <td className={styles.score}>{entry.scores.r2}</td>
-              <td className={styles.score}>{entry.scores.r3}</td>
+              <td className={styles.score}>{formatScore(entry.perQuestion[0]?.score ?? entry.scores.r1)}</td>
+              <td className={styles.score}>{formatScore(entry.perQuestion[1]?.score ?? entry.scores.r2)}</td>
+              <td className={styles.score}>{formatScore(entry.perQuestion[2]?.score ?? entry.scores.r3)}</td>
               <td className={styles.total}>{entry.total}</td>
             </motion.tr>
           ))}

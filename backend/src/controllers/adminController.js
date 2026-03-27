@@ -8,7 +8,9 @@ import { ok } from '../utils/http.js';
 
 export async function startRound(req, res, next) {
   try {
-    const round = await startRoundByNumber(req.params.roundNumber);
+    const round = await startRoundByNumber(req.params.roundNumber, {
+      startInSeconds: req.body?.startInSeconds,
+    });
     return ok(res, { action: 'start', round }, 200);
   } catch (error) {
     return next(error);

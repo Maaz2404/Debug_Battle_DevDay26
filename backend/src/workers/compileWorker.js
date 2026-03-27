@@ -19,6 +19,192 @@ function normalizeOutput(value) {
     .trim();
 }
 
+function collapseWhitespace(value) {
+  return String(value ?? '')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function maybeNormalizeCase(value, ignoreCase) {
+  if (!ignoreCase) {
+    return value;
+  }
+  return String(value).toLowerCase();
+}
+
+function tryParseNumber(value) {
+  const text = String(value ?? '').trim();
+  if (!/^[+-]?(\d+\.?\d*|\.\d+)$/.test(text)) {
+    return null;
+  }
+
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function canonicalizeJson(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => canonicalizeJson(item));
+  }
+
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value).sort();
+    const output = {};
+    for (const key of keys) {
+      output[key] = canonicalizeJson(value[key]);
+    }
+    return output;
+  }
+
+  return value;
+}
+
+function tryParseJson(value) {
+  const text = String(value ?? '').trim();
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return canonicalizeJson(JSON.parse(text));
+  } catch {
+    return null;
+  }
+}
+
+function compareByMode(actualRaw, expectedRaw, testCase = {}) {
+  const mode = String(testCase.compare_mode || 'auto').toLowerCase();
+  const ignoreCase = Boolean(testCase.ignore_case);
+  const epsilon = Number.isFinite(Number(testCase.epsilon))
+    ? Number(testCase.epsilon)
+    : 1e-9;
+
+  const actualNormalized = normalizeOutput(actualRaw);
+  const expectedNormalized = normalizeOutput(expectedRaw);
+
+  const exactActual = maybeNormalizeCase(actualNormalized, ignoreCase);
+  const exactExpected = maybeNormalizeCase(expectedNormalized, ignoreCase);
+
+  const passExact = () => ({
+    passed: exactActual === exactExpected,
+    actual: actualNormalized,
+    expected: expectedNormalized,
+    mode: 'exact',
+  });
+
+  const passTokens = () => {
+    const tokenActual = maybeNormalizeCase(collapseWhitespace(actualRaw), ignoreCase);
+    const tokenExpected = maybeNormalizeCase(collapseWhitespace(expectedRaw), ignoreCase);
+    return {
+      passed: tokenActual === tokenExpected,
+      actual: collapseWhitespace(actualRaw),
+      expected: collapseWhitespace(expectedRaw),
+      mode: 'tokens',
+    };
+  };
+
+  const passNumeric = () => {
+    const a = tryParseNumber(actualRaw);
+    const e = tryParseNumber(expectedRaw);
+    if (a === null || e === null) {
+      return {
+        passed: false,
+        actual: actualNormalized,
+        expected: expectedNormalized,
+        mode: 'numeric',
+      };
+    }
+
+    return {
+      passed: Math.abs(a - e) <= epsilon,
+      actual: String(a),
+      expected: String(e),
+      mode: 'numeric',
+    };
+  };
+
+  const passJson = () => {
+    const a = tryParseJson(actualRaw);
+    const e = tryParseJson(expectedRaw);
+    if (a === null || e === null) {
+      return {
+        passed: false,
+        actual: actualNormalized,
+        expected: expectedNormalized,
+        mode: 'json',
+      };
+    }
+
+    return {
+      passed: JSON.stringify(a) === JSON.stringify(e),
+      actual: JSON.stringify(a),
+      expected: JSON.stringify(e),
+      mode: 'json',
+    };
+  };
+
+  if (mode === 'exact') {
+    return passExact();
+  }
+
+  if (mode === 'tokens') {
+    return passTokens();
+  }
+
+  if (mode === 'numeric') {
+    return passNumeric();
+  }
+
+  if (mode === 'json') {
+    return passJson();
+  }
+
+  // auto mode
+  const exact = passExact();
+  if (exact.passed) {
+    return exact;
+  }
+
+  const numeric = passNumeric();
+  if (numeric.passed) {
+    return numeric;
+  }
+
+  const json = passJson();
+  if (json.passed) {
+    return json;
+  }
+
+  return passTokens();
+}
+
+function chunkTestCases(testCases, maxCases, maxChars) {
+  const chunks = [];
+  let current = [];
+  let currentChars = 0;
+
+  for (const tc of testCases) {
+    const tcChars = String(tc.input ?? '').length;
+    const caseLimitReached = current.length >= maxCases;
+    const charLimitReached = (currentChars + tcChars) > maxChars;
+
+    if (current.length > 0 && (caseLimitReached || charLimitReached)) {
+      chunks.push(current);
+      current = [];
+      currentChars = 0;
+    }
+
+    current.push(tc);
+    currentChars += tcChars;
+  }
+
+  if (current.length > 0) {
+    chunks.push(current);
+  }
+
+  return chunks;
+}
+
 function toSpaceString(value) {
   if (Array.isArray(value)) {
     return value.join(' ');
@@ -82,37 +268,57 @@ async function setRunPassKey({ teamId, questionId, roundId }) {
 
 async function evaluateTestCases({ submissionId, language, code, testCases }) {
   const testResults = [];
+  const normalizedCases = (testCases || []).map((tc) => ({
+    ...tc,
+    input: toSpaceString(tc?.input ?? ''),
+    expected_output: toSpaceString(tc?.expected_output ?? ''),
+  }));
 
-  for (const tc of testCases) {
-    const tcInputRaw = tc.input ?? '';
-    const tcExpectedRaw = tc.expected_output ?? '';
-    const tcInput = toSpaceString(tcInputRaw);
-    const tcExpected = toSpaceString(tcExpectedRaw);
+  const maxBatchCases = Math.max(1, Number(process.env.ONECOMPILER_MAX_BATCH_TESTCASES || 25));
+  const maxBatchChars = Math.max(1000, Number(process.env.ONECOMPILER_MAX_BATCH_STDIN_CHARS || 30000));
+  const chunks = chunkTestCases(normalizedCases, maxBatchCases, maxBatchChars);
 
-    console.log('[compile-worker] running testcase', {
-      submissionId,
-      input_raw: tcInputRaw,
-      input_for_stdin: tcInput,
-      expected_raw: tcExpectedRaw,
-    });
+  console.log('[compile-worker] evaluating testcases', {
+    submissionId,
+    total_cases: normalizedCases.length,
+    chunk_count: chunks.length,
+    max_batch_cases: maxBatchCases,
+    max_batch_chars: maxBatchChars,
+  });
 
-    const execution = await runCodeOnOneCompiler({
+  for (const chunk of chunks) {
+    const inputs = chunk.map((tc) => tc.input);
+    const executions = await runCodeOnOneCompiler({
       language,
       code,
-      stdin: tcInput,
+      stdin: inputs,
     });
 
-    const actual = normalizeOutput(execution?.stdout);
-    const expected = normalizeOutput(tcExpected);
-    const passed = actual === expected;
+    const rows = Array.isArray(executions) ? executions : [executions];
 
-    testResults.push({
-      input: tcInput,
-      expected,
-      actual,
-      passed,
-      stderr: normalizeOutput(execution?.stderr),
-    });
+    for (let i = 0; i < chunk.length; i += 1) {
+      const tc = chunk[i];
+      const execution = rows[i] || {};
+
+      const actualRaw = String(execution?.stdout ?? '');
+      const expectedRaw = String(tc.expected_output ?? '');
+      const compared = compareByMode(actualRaw, expectedRaw, tc);
+
+      const executionHasHardError = Boolean(execution?.error || execution?.exception)
+        || String(execution?.status || '').toLowerCase() === 'failed';
+
+      testResults.push({
+        input: tc.input,
+        expected: compared.expected,
+        actual: compared.actual,
+        passed: executionHasHardError ? false : compared.passed,
+        compare_mode: compared.mode,
+        stderr: normalizeOutput(execution?.stderr),
+        exception: execution?.exception || null,
+        error: execution?.error || null,
+        execution_time_ms: Number(execution?.executionTime || 0),
+      });
+    }
   }
 
   const passedCount = testResults.filter((tr) => tr.passed).length;
