@@ -22,9 +22,11 @@ export const endpoints = {
     submissionStatus: (submissionId: string) => `${API_BASE_URL}/submissions/${submissionId}`,
   },
   admin: {
+    rounds: `${API_BASE_URL}/admin/rounds`,
     startRound: (roundNumber: number) => `${API_BASE_URL}/admin/round/${roundNumber}/start`,
     pauseRound: (roundNumber: number) => `${API_BASE_URL}/admin/round/${roundNumber}/pause`,
     resumeRound: (roundNumber: number) => `${API_BASE_URL}/admin/round/${roundNumber}/resume`,
     endRound: (roundNumber: number) => `${API_BASE_URL}/admin/round/${roundNumber}/end`,
+    resetRound: (roundNumber: number) => `${API_BASE_URL}/admin/round/${roundNumber}/reset`,
   },
 };

@@ -43,6 +43,106 @@ async function getQuestionById(questionId) {
   return data || null;
 }
 
+async function getRoundQuestionCatalog() {
+  const { data: rounds, error: roundsError } = await supabaseAdmin
+    .from('rounds')
+    .select('id, round_number')
+    .order('round_number', { ascending: true });
+
+  if (roundsError) {
+    throw new Error(`Failed to load rounds for leaderboard: ${roundsError.message}`);
+  }
+
+  const { data: questions, error: questionsError } = await supabaseAdmin
+    .from('questions')
+    .select('id, round_id, position')
+    .order('position', { ascending: true });
+
+  if (questionsError) {
+    throw new Error(`Failed to load questions for leaderboard: ${questionsError.message}`);
+  }
+
+  const questionsByRoundId = new Map();
+  for (const row of questions || []) {
+    const key = String(row.round_id || '');
+    if (!key) {
+      continue;
+    }
+
+    if (!questionsByRoundId.has(key)) {
+      questionsByRoundId.set(key, []);
+    }
+    questionsByRoundId.get(key).push({
+      id: row.id,
+      position: Number(row.position || 0),
+    });
+  }
+
+  return (rounds || []).map((round) => ({
+    id: round.id,
+    round_number: Number(round.round_number || 0),
+    questions: (questionsByRoundId.get(String(round.id)) || [])
+      .sort((a, b) => a.position - b.position),
+  }));
+}
+
+async function getAcceptedSubmissionScores(teamIds) {
+  if (!Array.isArray(teamIds) || teamIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('submissions')
+    .select('team_id, round_id, question_id, total_score, base_score, bonus_score, solve_rank')
+    .eq('job_type', 'submit')
+    .eq('status', 'ACCEPTED')
+    .in('team_id', teamIds);
+
+  if (error) {
+    throw new Error(`Failed to load submission scores for leaderboard: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+function buildTeamRoundScoreMap(rows) {
+  const map = new Map();
+
+  for (const row of rows || []) {
+    const teamId = String(row.team_id || '');
+    const roundId = String(row.round_id || '');
+    const questionId = String(row.question_id || '');
+    if (!teamId || !roundId || !questionId) {
+      continue;
+    }
+
+    if (!map.has(teamId)) {
+      map.set(teamId, new Map());
+    }
+
+    const roundMap = map.get(teamId);
+    if (!roundMap.has(roundId)) {
+      roundMap.set(roundId, new Map());
+    }
+
+    const questionMap = roundMap.get(roundId);
+    const nextScore = Number(
+      row.total_score
+      ?? (Number(row.base_score || 0) + Number(row.bonus_score || 0)),
+    );
+
+    const previous = questionMap.get(questionId);
+    if (!previous || nextScore > previous.score) {
+      questionMap.set(questionId, {
+        score: nextScore,
+        solveRank: Number(row.solve_rank || 0) || null,
+      });
+    }
+  }
+
+  return map;
+}
+
 async function getLiveLeaderboard(compId, limit = 30) {
   const raw = await redis.zrevrange(`leaderboard:${compId}`, 0, Math.max(0, limit - 1), 'WITHSCORES');
   if (!Array.isArray(raw) || raw.length === 0) {
@@ -59,12 +159,41 @@ async function getLiveLeaderboard(compId, limit = 30) {
   }
 
   const teamNames = await getTeamNames(teamIds);
-  return entries.map((entry, index) => ({
-    rank: index + 1,
-    team_id: entry.teamId,
-    team_name: teamNames.get(entry.teamId) || 'Unknown Team',
-    total_score: entry.totalScore,
-  }));
+  const roundCatalog = await getRoundQuestionCatalog();
+  const acceptedScores = await getAcceptedSubmissionScores(teamIds);
+  const teamRoundScoreMap = buildTeamRoundScoreMap(acceptedScores);
+
+  return entries.map((entry, index) => {
+    const roundMap = teamRoundScoreMap.get(entry.teamId) || new Map();
+    const perRound = roundCatalog.map((round) => {
+      const questionScoreMap = roundMap.get(String(round.id)) || new Map();
+      const questions = round.questions.map((question) => {
+        const scored = questionScoreMap.get(String(question.id));
+        return {
+          question_id: question.id,
+          position: question.position,
+          completed: Boolean(scored),
+          score: scored ? Number(scored.score || 0) : null,
+          solve_rank: scored?.solveRank ?? null,
+        };
+      });
+
+      return {
+        round_id: round.id,
+        round_number: round.round_number,
+        questions,
+        round_total: questions.reduce((sum, item) => sum + Number(item.score || 0), 0),
+      };
+    });
+
+    return {
+      rank: index + 1,
+      team_id: entry.teamId,
+      team_name: teamNames.get(entry.teamId) || 'Unknown Team',
+      total_score: entry.totalScore,
+      per_round: perRound,
+    };
+  });
 }
 
 export async function getCompetitionState(competitionId) {
@@ -157,6 +286,42 @@ export async function getCompetitionState(competitionId) {
         leaderboard: await getLiveLeaderboard(env.COMPETITION_ID),
       };
     }
+  }
+
+  const { data: allRounds, error: allRoundsError } = await supabaseAdmin
+    .from('rounds')
+    .select('id, round_number, status')
+    .order('round_number', { ascending: true });
+
+  if (allRoundsError) {
+    throw new Error(`Failed to load rounds: ${allRoundsError.message}`);
+  }
+
+  const rounds = allRounds || [];
+  const nextIdleRound = rounds.find((round) => round.status === 'IDLE');
+  if (nextIdleRound) {
+    roundState.status = 'IDLE';
+    roundState.round_id = nextIdleRound.id;
+    roundState.round_number = nextIdleRound.round_number;
+    roundState.current_question_index = 0;
+    roundState.current_question_id = null;
+    roundState.time_remaining_seconds = 0;
+    roundState.next_start_at = null;
+
+    return {
+      competition_id: competitionId,
+      round: roundState,
+      current_question: null,
+      leaderboard: await getLiveLeaderboard(env.COMPETITION_ID),
+    };
+  }
+
+  const allRoundsEnded = rounds.length > 0 && rounds.every((round) => round.status === 'ENDED');
+  if (allRoundsEnded) {
+    const finalRound = rounds[rounds.length - 1];
+    roundState.status = 'ENDED';
+    roundState.round_id = finalRound.id;
+    roundState.round_number = finalRound.round_number;
   }
 
   return {

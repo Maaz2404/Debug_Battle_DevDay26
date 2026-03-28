@@ -80,18 +80,32 @@ export const useAppStore = create<AppState>()(
       setCurrentQuestion: (currentQuestion) => set({ currentQuestion }),
       setLeaderboard: (leaderboard) => set((state) => ({
         leaderboard: leaderboard.map((entry) => {
-          if (entry.perQuestion.length > 0) {
+          const incomingRoundCells = entry.rounds.reduce(
+            (sum, round) => sum + Number(round.questions.length || 0),
+            0,
+          );
+
+          if (entry.perQuestion.length > 0 && incomingRoundCells > 0) {
             return entry;
           }
 
           const previous = state.leaderboard.find((item) => item.teamId === entry.teamId);
-          if (!previous || previous.perQuestion.length === 0) {
+          if (!previous) {
             return entry;
           }
 
+          const previousRoundCells = previous.rounds.reduce(
+            (sum, round) => sum + Number(round.questions.length || 0),
+            0,
+          );
+          const shouldKeepPreviousRounds = previousRoundCells > 0 && incomingRoundCells < previousRoundCells;
+
           return {
             ...entry,
-            perQuestion: previous.perQuestion,
+            perQuestion: entry.perQuestion.length > 0 ? entry.perQuestion : previous.perQuestion,
+            rounds: shouldKeepPreviousRounds
+              ? previous.rounds
+              : (entry.rounds.length > 0 ? entry.rounds : previous.rounds),
             scores: {
               r1: typeof previous.perQuestion[0]?.score === "number" ? previous.perQuestion[0].score : entry.scores.r1,
               r2: typeof previous.perQuestion[1]?.score === "number" ? previous.perQuestion[1].score : entry.scores.r2,

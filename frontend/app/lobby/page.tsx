@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { BrandLogo } from "@/components/BrandLogo";
@@ -9,6 +10,7 @@ import { HeaderBar } from "@/components/HeaderBar";
 import { LogoutButton } from "@/components/LogoutButton";
 import { useLogout } from "@/hooks/useLogout";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
+import { apiClient } from "@/lib/api/client";
 import { REAL_BACKEND_ENABLED } from "@/lib/config/runtime";
 import { useAppStore } from "@/lib/store/useAppStore";
 import styles from "./page.module.css";
@@ -37,6 +39,9 @@ export default function LobbyPage() {
   const countdownValue = useAppStore((state) => state.countdownValue);
   const setCountdownValue = useAppStore((state) => state.setCountdownValue);
   const setCompetition = useAppStore((state) => state.setCompetition);
+  const setLeaderboard = useAppStore((state) => state.setLeaderboard);
+
+  const isCompetitionEnded = competition?.status === "ENDED";
 
   useEffect(() => {
     if (competition?.status === "ACTIVE") {
@@ -75,6 +80,29 @@ export default function LobbyPage() {
   }, [competition, now, router, setCompetition]);
 
   useEffect(() => {
+    if (!REAL_BACKEND_ENABLED || !user?.token || competition?.status !== "ENDED") {
+      return;
+    }
+
+    let disposed = false;
+
+    apiClient.getState(user.token)
+      .then((snapshot) => {
+        if (!disposed) {
+          setCompetition(snapshot.competition);
+          setLeaderboard(snapshot.leaderboard);
+        }
+      })
+      .catch(() => {
+        // Keep current UI state if refresh fails.
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [competition?.status, setCompetition, setLeaderboard, user?.token]);
+
+  useEffect(() => {
     if (countdownValue === null) {
       return;
     }
@@ -109,9 +137,17 @@ export default function LobbyPage() {
 
       <main className={styles.main}>
         <section className={styles.panel}>
-          <p className={styles.welcome}>Welcome {user?.participantName}</p>
-          <h1 className={styles.title}>Waiting for admin to start <br />Round {competition?.round ?? 1}</h1>
-          <p className={styles.subtitle}>Get ready. Questions will stream live and your rank updates in real time.</p>
+          <p className={styles.welcome}>Welcome {user?.teamName}</p>
+          <h1 className={styles.title}>
+            {isCompetitionEnded
+              ? "Competition ended"
+              : <>Waiting for admin to start <br />Round {competition?.round ?? 1}</>}
+          </h1>
+          <p className={styles.subtitle}>
+            {isCompetitionEnded
+              ? "Final standings are ready. View the final leaderboard below."
+              : "Get ready. Questions will stream live and your rank updates in real time."}
+          </p>
 
           <div className={styles.dots}>
             <div className={styles.dot1} />
@@ -119,9 +155,15 @@ export default function LobbyPage() {
             <div className={styles.dot3} />
           </div>
 
-          <p className={styles.nextRound}>
-            Time to next round: <span className={styles.nextRoundValue}>{formatTimeUntil(competition?.nextQuestionAt ?? null, now)}</span>
-          </p>
+          {isCompetitionEnded ? (
+            <div className={styles.finalWrap}>
+              <Link href="/leaderboard" className={styles.finalLink}>View Final Leaderboard</Link>
+            </div>
+          ) : (
+            <p className={styles.nextRound}>
+              Time to next round: <span className={styles.nextRoundValue}>{formatTimeUntil(competition?.nextQuestionAt ?? null, now)}</span>
+            </p>
+          )}
         </section>
       </main>
 

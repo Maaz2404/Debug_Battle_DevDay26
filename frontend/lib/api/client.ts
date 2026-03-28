@@ -59,16 +59,24 @@ const defaultCompetition: CompetitionState = {
 };
 
 const mockLeaderboard: LeaderboardEntry[] = [
-  { teamId: "a", teamName: "Alpha Stack", rank: 1, perQuestion: [], scores: { r1: 120, r2: 110, r3: 0 }, total: 230 },
-  { teamId: "b", teamName: "Byte Raiders", rank: 2, perQuestion: [], scores: { r1: 115, r2: 105, r3: 0 }, total: 220 },
-  { teamId: "c", teamName: "Null Ninjas", rank: 3, perQuestion: [], scores: { r1: 100, r2: 98, r3: 0 }, total: 198 },
-  { teamId: "d", teamName: "Segfault Squad", rank: 4, perQuestion: [], scores: { r1: 90, r2: 88, r3: 0 }, total: 178 },
+  { teamId: "a", teamName: "Alpha Stack", rank: 1, rounds: [], perQuestion: [], scores: { r1: 120, r2: 110, r3: 0 }, total: 230 },
+  { teamId: "b", teamName: "Byte Raiders", rank: 2, rounds: [], perQuestion: [], scores: { r1: 115, r2: 105, r3: 0 }, total: 220 },
+  { teamId: "c", teamName: "Null Ninjas", rank: 3, rounds: [], perQuestion: [], scores: { r1: 100, r2: 98, r3: 0 }, total: 198 },
+  { teamId: "d", teamName: "Segfault Squad", rank: 4, rounds: [], perQuestion: [], scores: { r1: 90, r2: 88, r3: 0 }, total: 178 },
 ];
 
 export interface LoginResponse {
   session: UserSession;
   competition: CompetitionState;
   currentQuestion: Question | null;
+}
+
+export interface AdminRoundInfo {
+  id: string;
+  round_number: number;
+  status: "IDLE" | "ACTIVE" | "PAUSED" | "ENDED";
+  started_at: string | null;
+  ended_at: string | null;
 }
 
 type BackendCompetitionState = {
@@ -567,6 +575,17 @@ export const apiClient = {
 
     const roundEndHandler = (payload: BackendRoundLifecyclePayload) => {
       handlers.onCompetitionState?.(toCompetitionFromLifecycle(payload, "ENDED"));
+
+      void getCompetitionState(token)
+        .then((state) => {
+          runtimeRoundId = state.round?.round_id || runtimeRoundId;
+          handlers.onCompetitionState?.(mapBackendStateToCompetitionState(state));
+          handlers.onQuestion?.(mapBackendStateToQuestion(state));
+          handlers.onLeaderboard?.(mapBackendLeaderboard(state.leaderboard));
+        })
+        .catch(() => {
+          // Keep ENDED lifecycle fallback if snapshot refresh fails.
+        });
     };
 
     const roundScheduledHandler = (payload: BackendRoundLifecyclePayload) => {
@@ -680,6 +699,36 @@ export const apiClient = {
       method: "POST",
       token,
     });
+    return { ok: true };
+  },
+
+  getAdminRounds: async (token: string): Promise<AdminRoundInfo[]> => {
+    if (!REAL_BACKEND_ENABLED) {
+      return [
+        { id: "r1", round_number: 1, status: "IDLE", started_at: null, ended_at: null },
+        { id: "r2", round_number: 2, status: "IDLE", started_at: null, ended_at: null },
+        { id: "r3", round_number: 3, status: "IDLE", started_at: null, ended_at: null },
+      ];
+    }
+
+    const payload = await apiRequest<{ rounds?: AdminRoundInfo[] }>(endpoints.admin.rounds, {
+      method: "GET",
+      token,
+    });
+
+    return payload.rounds || [];
+  },
+
+  resetRound: async (token: string, round: number) => {
+    if (!REAL_BACKEND_ENABLED) {
+      return { ok: true };
+    }
+
+    await apiRequest(endpoints.admin.resetRound(round), {
+      method: "POST",
+      token,
+    });
+
     return { ok: true };
   },
 };

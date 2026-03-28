@@ -58,6 +58,17 @@ export interface LeaderboardEntry {
   teamId: string;
   teamName: string;
   rank: number;
+  rounds: Array<{
+    roundNumber: number;
+    questions: Array<{
+      questionId: string | null;
+      position: number;
+      completed: boolean;
+      score: number | null;
+      solveRank: number | null;
+    }>;
+    roundTotal: number;
+  }>;
   perQuestion: Array<{
     questionId: string | null;
     completed: boolean;

@@ -71,6 +71,32 @@ async function getRoundByNumber(roundNumber) {
   return data;
 }
 
+async function getRoundQuestionIds(roundId) {
+  const { data, error } = await supabaseAdmin
+    .from('questions')
+    .select('id')
+    .eq('round_id', roundId);
+
+  if (error) {
+    throw new HttpError(500, 'Failed to read round question ids', error.message);
+  }
+
+  return (data || []).map((row) => row.id);
+}
+
+export async function listRounds() {
+  const { data, error } = await supabaseAdmin
+    .from('rounds')
+    .select('id, round_number, status, started_at, ended_at, duration_seconds')
+    .order('round_number', { ascending: true });
+
+  if (error) {
+    throw new HttpError(500, 'Failed to read rounds', error.message);
+  }
+
+  return data || [];
+}
+
 async function getRoundQuestions(roundId) {
   const { data, error } = await supabaseAdmin
     .from('questions')
@@ -494,6 +520,25 @@ export async function startRoundByNumber(roundNumber, options = {}) {
     throw new HttpError(409, `Cannot start round in status ${round.status}`);
   }
 
+  const { data: blockingRound, error: blockingRoundError } = await supabaseAdmin
+    .from('rounds')
+    .select('round_number, status')
+    .in('status', ['ACTIVE', 'PAUSED'])
+    .neq('id', round.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (blockingRoundError) {
+    throw new HttpError(500, 'Failed to verify active round state', blockingRoundError.message);
+  }
+
+  if (blockingRound) {
+    throw new HttpError(
+      409,
+      `Cannot start round ${round.round_number} while round ${blockingRound.round_number} is ${blockingRound.status}`,
+    );
+  }
+
   if (scheduledRoundStartTimers.has(round.id)) {
     throw new HttpError(409, 'Round start is already scheduled');
   }
@@ -579,6 +624,74 @@ export async function startRoundByNumber(roundNumber, options = {}) {
   await scheduleNextTransition(state);
 
   return round;
+}
+
+export async function resetRoundByNumber(roundNumber) {
+  const round = await getRoundByNumber(roundNumber);
+  if (round.status !== 'ENDED') {
+    throw new HttpError(409, `Cannot reset round in status ${round.status}. Round must be ENDED.`);
+  }
+
+  clearRoundTimer(round.id);
+  clearScheduledRoundStartTimer(round.id);
+
+  const scheduledRaw = await redis.hgetall(getScheduledStartKey());
+  if (scheduledRaw?.round_id === round.id) {
+    await redis.del(getScheduledStartKey());
+  }
+
+  await updateRoundStatus(round.id, {
+    status: 'IDLE',
+    started_at: null,
+    ended_at: null,
+  });
+
+  const { error: deleteSubmissionsError } = await supabaseAdmin
+    .from('submissions')
+    .delete()
+    .eq('round_id', round.id);
+
+  if (deleteSubmissionsError) {
+    throw new HttpError(500, 'Failed to delete round submissions', deleteSubmissionsError.message);
+  }
+
+  const { error: deleteSnapshotsError } = await supabaseAdmin
+    .from('leaderboard_snapshots')
+    .delete()
+    .eq('round_id', round.id);
+
+  if (deleteSnapshotsError) {
+    throw new HttpError(500, 'Failed to delete leaderboard snapshot', deleteSnapshotsError.message);
+  }
+
+  const questionIds = await getRoundQuestionIds(round.id);
+
+  await cleanupRunpassForRound(round.id);
+  await cleanupLiveProgressForRound(round.id);
+  await cleanupDedupForQuestionIds(questionIds);
+
+  await redis.del(getRoundStatusKey(round.id));
+  await redis.del(getRoundStartKey(round.id));
+  await redis.del(getCurrentQuestionKey(round.id));
+
+  const runtime = await readRoundRuntimeState();
+  if (runtime?.roundId === round.id) {
+    await redis.del(getCompetitionStateKey());
+  }
+
+  await rebuildLeaderboardFromDatabase();
+
+  console.log('[competition-engine] round reset', {
+    roundId: round.id,
+    roundNumber: round.round_number,
+  });
+
+  return {
+    ...round,
+    status: 'IDLE',
+    started_at: null,
+    ended_at: null,
+  };
 }
 
 export async function pauseRoundByNumber(roundNumber) {

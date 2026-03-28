@@ -1,6 +1,8 @@
 import {
   endRoundByNumber,
+  listRounds,
   pauseRoundByNumber,
+  resetRoundByNumber,
   resumeRoundByNumber,
   startRoundByNumber,
 } from '../services/adminRoundService.js';
@@ -39,6 +41,24 @@ export async function endRound(req, res, next) {
   try {
     const round = await endRoundByNumber(req.params.roundNumber);
     return ok(res, { action: 'end', round }, 200);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getRounds(req, res, next) {
+  try {
+    const rounds = await listRounds();
+    return ok(res, { rounds }, 200);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function resetRound(req, res, next) {
+  try {
+    const round = await resetRoundByNumber(req.params.roundNumber);
+    return ok(res, { action: 'reset', round }, 200);
   } catch (error) {
     return next(error);
   }

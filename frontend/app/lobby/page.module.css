@@ -123,6 +123,29 @@
   font-weight: 600;
 }
 
+.finalWrap {
+  margin-top: 1.5rem;
+}
+
+.finalLink {
+  display: inline-block;
+  border: 1px solid var(--accent-soft-border);
+  border-radius: 0.6rem;
+  background: var(--accent-soft-bg);
+  color: var(--accent-soft-text);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.55rem 0.95rem;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: filter 120ms ease;
+}
+
+.finalLink:hover {
+  filter: brightness(1.05);
+}
+
 @media (min-width: 768px) {
   .title {
     font-size: 3rem;

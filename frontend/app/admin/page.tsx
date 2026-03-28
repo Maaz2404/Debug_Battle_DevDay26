@@ -5,13 +5,21 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { ConnectionStatusBadge } from "@/components/ConnectionStatusBadge";
 import { HeaderBar } from "@/components/HeaderBar";
-import { apiClient } from "@/lib/api/client";
+import { apiClient, type AdminRoundInfo } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/http";
 import { useAppStore } from "@/lib/store/useAppStore";
 import type { RoundStatus } from "@/lib/types";
 import styles from "./page.module.css";
 
 const navItems = ["Overview", "Round 1", "Round 2", "Round 3", "Teams", "Questions"];
+
+function parseRoundFromNav(value: string) {
+  const match = value.match(/^Round\s+(\d+)$/);
+  if (!match) {
+    return null;
+  }
+  return Number(match[1]);
+}
 
 function formatClock(endsAt: number | null, now: number) {
   if (!endsAt) {
@@ -34,6 +42,7 @@ export default function AdminPage() {
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [startInSeconds, setStartInSeconds] = useState(10);
+  const [roundPanels, setRoundPanels] = useState<AdminRoundInfo[]>([]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
@@ -48,6 +57,32 @@ export default function AdminPage() {
   const isAdmin = Boolean(user?.isAdmin);
 
   const stateLabel = useMemo<RoundStatus>(() => competition?.status ?? "IDLE", [competition?.status]);
+  const selectedRound = useMemo(() => parseRoundFromNav(activeNav), [activeNav]);
+  const selectedRoundNumber = selectedRound ?? (competition?.round ?? 1);
+  const isRoundTab = selectedRound !== null;
+
+  const selectedRoundInfo = useMemo(() => (
+    roundPanels.find((entry) => entry.round_number === selectedRoundNumber)
+  ), [roundPanels, selectedRoundNumber]);
+
+  const selectedRoundStatus = useMemo<RoundStatus>(() => {
+    if (selectedRoundInfo?.status) {
+      return selectedRoundInfo.status;
+    }
+
+    if (competition?.round === selectedRoundNumber) {
+      return stateLabel;
+    }
+
+    return "IDLE";
+  }, [competition?.round, selectedRoundInfo?.status, selectedRoundNumber, stateLabel]);
+
+  const hasBlockingActiveRound = useMemo(() => (
+    roundPanels.some((entry) => (
+      entry.round_number !== selectedRoundNumber && (entry.status === "ACTIVE" || entry.status === "PAUSED")
+    ))
+  ), [roundPanels, selectedRoundNumber]);
+
   const remainingSeconds = useMemo(() => {
     if (!competition?.roundEndsAt) {
       return 0;
@@ -55,11 +90,19 @@ export default function AdminPage() {
     return Math.max(0, Math.ceil((competition.roundEndsAt - now) / 1000));
   }, [competition?.roundEndsAt, now]);
 
+  const selectedRoundRemainingSeconds = useMemo(() => {
+    if (competition?.round !== selectedRoundNumber) {
+      return 0;
+    }
+    return remainingSeconds;
+  }, [competition?.round, remainingSeconds, selectedRoundNumber]);
+
   const isRoundScheduled = useMemo(() => (
-    stateLabel === "IDLE"
+    selectedRoundStatus === "IDLE"
+    && competition?.round === selectedRoundNumber
     && Boolean(competition?.nextQuestionAt)
     && (competition?.nextQuestionAt ?? 0) > now
-  ), [competition?.nextQuestionAt, now, stateLabel]);
+  ), [competition?.nextQuestionAt, competition?.round, now, selectedRoundNumber, selectedRoundStatus]);
 
   const scheduledStartInSeconds = useMemo(() => {
     if (!competition?.nextQuestionAt) {
@@ -68,10 +111,23 @@ export default function AdminPage() {
     return Math.max(0, Math.ceil((competition.nextQuestionAt - now) / 1000));
   }, [competition?.nextQuestionAt, now]);
 
-  const canStart = isAdmin && !busy && stateLabel === "IDLE" && !isRoundScheduled;
-  const canPause = isAdmin && !busy && stateLabel === "ACTIVE" && remainingSeconds > 0;
-  const canResume = isAdmin && !busy && stateLabel === "PAUSED" && remainingSeconds > 0;
-  const canEnd = isAdmin && !busy && (stateLabel === "ACTIVE" || stateLabel === "PAUSED") && remainingSeconds > 0;
+  const canStart = isAdmin && !busy && selectedRoundStatus === "IDLE" && !isRoundScheduled && !hasBlockingActiveRound;
+  const canPause = isAdmin
+    && !busy
+    && selectedRoundStatus === "ACTIVE"
+    && competition?.round === selectedRoundNumber
+    && selectedRoundRemainingSeconds > 0;
+  const canResume = isAdmin
+    && !busy
+    && selectedRoundStatus === "PAUSED"
+    && competition?.round === selectedRoundNumber
+    && selectedRoundRemainingSeconds > 0;
+  const canEnd = isAdmin
+    && !busy
+    && (selectedRoundStatus === "ACTIVE" || selectedRoundStatus === "PAUSED")
+    && competition?.round === selectedRoundNumber
+    && selectedRoundRemainingSeconds > 0;
+  const canReset = isAdmin && !busy && selectedRoundStatus === "ENDED";
 
   const getStartDisabledReason = () => {
     if (canStart) {
@@ -83,10 +139,13 @@ export default function AdminPage() {
     if (busy) {
       return "Another admin action is in progress.";
     }
-    if (isRoundScheduled) {
-      return `Round already scheduled to start in ${scheduledStartInSeconds}s.`;
+    if (hasBlockingActiveRound) {
+      return "Another round is currently ACTIVE or PAUSED. End it before starting this round.";
     }
-    return "Start is only available while round status is IDLE.";
+    if (isRoundScheduled) {
+      return `Round ${selectedRoundNumber} is already scheduled to start in ${scheduledStartInSeconds}s.`;
+    }
+    return `Start is only available when Round ${selectedRoundNumber} is IDLE.`;
   };
 
   const getPauseDisabledReason = () => {
@@ -99,8 +158,11 @@ export default function AdminPage() {
     if (busy) {
       return "Another admin action is in progress.";
     }
-    if (stateLabel !== "ACTIVE") {
-      return "Pause is only available while round status is ACTIVE.";
+    if (competition?.round !== selectedRoundNumber) {
+      return `Pause is only available on the currently active round (${competition?.round ?? "-"}).`;
+    }
+    if (selectedRoundStatus !== "ACTIVE") {
+      return "Pause is only available while selected round status is ACTIVE.";
     }
     return "Cannot pause when timer has reached 00:00.";
   };
@@ -115,8 +177,11 @@ export default function AdminPage() {
     if (busy) {
       return "Another admin action is in progress.";
     }
-    if (stateLabel !== "PAUSED") {
-      return "Resume is only available while round status is PAUSED.";
+    if (competition?.round !== selectedRoundNumber) {
+      return `Resume is only available on the currently paused round (${competition?.round ?? "-"}).`;
+    }
+    if (selectedRoundStatus !== "PAUSED") {
+      return "Resume is only available while selected round status is PAUSED.";
     }
     return "Cannot resume when no time remains.";
   };
@@ -131,16 +196,33 @@ export default function AdminPage() {
     if (busy) {
       return "Another admin action is in progress.";
     }
-    if (stateLabel !== "ACTIVE" && stateLabel !== "PAUSED") {
-      return "End is only available while round status is ACTIVE or PAUSED.";
+    if (competition?.round !== selectedRoundNumber) {
+      return `End is only available on the currently running round (${competition?.round ?? "-"}).`;
+    }
+    if (selectedRoundStatus !== "ACTIVE" && selectedRoundStatus !== "PAUSED") {
+      return "End is only available while selected round status is ACTIVE or PAUSED.";
     }
     return "Cannot end when timer has reached 00:00.";
+  };
+
+  const getResetDisabledReason = () => {
+    if (canReset) {
+      return null;
+    }
+    if (!isAdmin) {
+      return "Sign in as admin to reset the round.";
+    }
+    if (busy) {
+      return "Another admin action is in progress.";
+    }
+    return "Reset is available only when selected round status is ENDED.";
   };
 
   const startDisabledReason = getStartDisabledReason();
   const pauseDisabledReason = getPauseDisabledReason();
   const resumeDisabledReason = getResumeDisabledReason();
   const endDisabledReason = getEndDisabledReason();
+  const resetDisabledReason = getResetDisabledReason();
 
   const getAdminActionErrorMessage = (error: unknown, fallback: string) => {
     if (error instanceof ApiError) {
@@ -170,10 +252,14 @@ export default function AdminPage() {
     let disposed = false;
 
     const syncState = () => {
-      apiClient.getState(user.token)
-        .then((snapshot) => {
+      Promise.all([
+        apiClient.getState(user.token),
+        apiClient.getAdminRounds(user.token),
+      ])
+        .then(([snapshot, rounds]) => {
           if (!disposed) {
             setCompetition(snapshot.competition);
+            setRoundPanels(rounds);
           }
         })
         .catch(() => {
@@ -207,6 +293,8 @@ export default function AdminPage() {
       setUser(response.session);
       setCompetition(response.competition);
       resetQuestionState(response.currentQuestion);
+      const rounds = await apiClient.getAdminRounds(response.session.token);
+      setRoundPanels(rounds);
       setPassword("");
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "Admin login failed.");
@@ -225,12 +313,16 @@ export default function AdminPage() {
     try {
       await apiClient.startRound(
         user?.token ?? "mock-admin-token",
-        competition?.round ?? 1,
+        selectedRoundNumber,
         startInSeconds,
       );
       if (user?.token) {
-        const snapshot = await apiClient.getState(user.token);
+        const [snapshot, rounds] = await Promise.all([
+          apiClient.getState(user.token),
+          apiClient.getAdminRounds(user.token),
+        ]);
         setCompetition(snapshot.competition);
+        setRoundPanels(rounds);
       }
     } catch (error) {
       setActionError(getAdminActionErrorMessage(error, "Failed to start round."));
@@ -240,10 +332,6 @@ export default function AdminPage() {
   };
 
   const pauseRound = async () => {
-    if (!competition) {
-      return;
-    }
-
     if (!canPause) {
       return;
     }
@@ -251,10 +339,14 @@ export default function AdminPage() {
     setBusy(true);
     setActionError(null);
     try {
-      await apiClient.pauseRound(user?.token ?? "", competition.round);
+      await apiClient.pauseRound(user?.token ?? "", selectedRoundNumber);
       if (user?.token) {
-        const snapshot = await apiClient.getState(user.token);
+        const [snapshot, rounds] = await Promise.all([
+          apiClient.getState(user.token),
+          apiClient.getAdminRounds(user.token),
+        ]);
         setCompetition(snapshot.competition);
+        setRoundPanels(rounds);
       }
     } catch (error) {
       setActionError(getAdminActionErrorMessage(error, "Failed to pause round."));
@@ -264,10 +356,6 @@ export default function AdminPage() {
   };
 
   const resumeRound = async () => {
-    if (!competition) {
-      return;
-    }
-
     if (!canResume) {
       return;
     }
@@ -275,10 +363,14 @@ export default function AdminPage() {
     setBusy(true);
     setActionError(null);
     try {
-      await apiClient.resumeRound(user?.token ?? "", competition.round);
+      await apiClient.resumeRound(user?.token ?? "", selectedRoundNumber);
       if (user?.token) {
-        const snapshot = await apiClient.getState(user.token);
+        const [snapshot, rounds] = await Promise.all([
+          apiClient.getState(user.token),
+          apiClient.getAdminRounds(user.token),
+        ]);
         setCompetition(snapshot.competition);
+        setRoundPanels(rounds);
       }
     } catch (error) {
       setActionError(getAdminActionErrorMessage(error, "Failed to resume round."));
@@ -288,10 +380,6 @@ export default function AdminPage() {
   };
 
   const endRound = async () => {
-    if (!competition) {
-      return;
-    }
-
     if (!canEnd) {
       return;
     }
@@ -299,13 +387,41 @@ export default function AdminPage() {
     setBusy(true);
     setActionError(null);
     try {
-      await apiClient.endRound(user?.token ?? "", competition.round);
+      await apiClient.endRound(user?.token ?? "", selectedRoundNumber);
       if (user?.token) {
-        const snapshot = await apiClient.getState(user.token);
+        const [snapshot, rounds] = await Promise.all([
+          apiClient.getState(user.token),
+          apiClient.getAdminRounds(user.token),
+        ]);
         setCompetition(snapshot.competition);
+        setRoundPanels(rounds);
       }
     } catch (error) {
       setActionError(getAdminActionErrorMessage(error, "Failed to end round."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resetRound = async () => {
+    if (!canReset) {
+      return;
+    }
+
+    setBusy(true);
+    setActionError(null);
+    try {
+      await apiClient.resetRound(user?.token ?? "", selectedRoundNumber);
+      if (user?.token) {
+        const [snapshot, rounds] = await Promise.all([
+          apiClient.getState(user.token),
+          apiClient.getAdminRounds(user.token),
+        ]);
+        setCompetition(snapshot.competition);
+        setRoundPanels(rounds);
+      }
+    } catch (error) {
+      setActionError(getAdminActionErrorMessage(error, "Failed to reset round."));
     } finally {
       setBusy(false);
     }
@@ -374,12 +490,26 @@ export default function AdminPage() {
         <main className={styles.main}>
           <h1 className={styles.pageTitle}>Admin Dashboard</h1>
 
+          {!isRoundTab ? (
           <section className={styles.card}>
             <p className={styles.cardLabel}>Current Round State</p>
             <div className={styles.stateRow}>
               <span className={styles.stateBadge}>{stateLabel}</span>
               <span className={styles.roundBadge}>Round {competition?.round ?? 1}</span>
               <span className={styles.roundBadge}>Time Left {formatClock(competition?.roundEndsAt ?? null, now)}</span>
+            </div>
+
+            <p className={styles.roundHint}>Use Round 1, Round 2, or Round 3 tabs for direct control panels.</p>
+          </section>
+          ) : null}
+
+          {isRoundTab ? (
+          <section className={styles.card}>
+            <p className={styles.cardLabel}>Round {selectedRoundNumber} Control Panel</p>
+            <div className={styles.stateRow}>
+              <span className={styles.stateBadge}>{selectedRoundStatus}</span>
+              <span className={styles.roundBadge}>Round {selectedRoundNumber}</span>
+              <span className={styles.roundBadge}>Time Left {formatClock(competition?.round === selectedRoundNumber ? (competition?.roundEndsAt ?? null) : null, now)}</span>
             </div>
 
             {actionError ? <p className={styles.authError}>{actionError}</p> : null}
@@ -443,8 +573,20 @@ export default function AdminPage() {
                 </button>
                 {endDisabledReason ? <p className={styles.actionHint}>{endDisabledReason}</p> : null}
               </div>
+              <div className={styles.actionControl}>
+                <button
+                  onClick={resetRound}
+                  disabled={!canReset}
+                  title={resetDisabledReason ?? undefined}
+                  className={styles.reset}
+                >
+                  Reset Round
+                </button>
+                {resetDisabledReason ? <p className={styles.actionHint}>{resetDisabledReason}</p> : null}
+              </div>
             </div>
           </section>
+          ) : null}
         </main>
       </div>
       ) : null}

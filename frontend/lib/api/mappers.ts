@@ -36,6 +36,19 @@ type BackendStateResponse = {
       completed?: boolean;
       score?: number;
       solve_rank?: number;
+      position?: number;
+    }>;
+    per_round?: Array<{
+      round_id?: string;
+      round_number?: number;
+      round_total?: number;
+      questions?: Array<{
+        question_id?: string;
+        position?: number;
+        completed?: boolean;
+        score?: number | null;
+        solve_rank?: number;
+      }>;
     }>;
   }>;
 };
@@ -175,10 +188,25 @@ export function mapBackendLeaderboard(entries: BackendStateResponse["leaderboard
       solveRank: item.solve_rank ? Number(item.solve_rank) : null,
     }));
 
+    const rounds = (entry.per_round || []).map((round) => ({
+      roundNumber: Number(round.round_number || 0),
+      questions: (round.questions || [])
+        .map((question, questionIndex) => ({
+          questionId: question.question_id ? String(question.question_id) : null,
+          position: Number(question.position || (questionIndex + 1)),
+          completed: Boolean(question.completed),
+          score: question.score === null || question.score === undefined ? null : Number(question.score),
+          solveRank: question.solve_rank ? Number(question.solve_rank) : null,
+        }))
+        .sort((a, b) => a.position - b.position),
+      roundTotal: Number(round.round_total || 0),
+    }));
+
     return {
       teamId: String(entry.team_id || `team-${index + 1}`),
       teamName: String(entry.team_name || "Unknown Team"),
       rank: Number(entry.rank || index + 1),
+      rounds,
       perQuestion,
       scores: {
         r1: typeof perQuestion[0]?.score === "number" ? Number(perQuestion[0].score) : null,

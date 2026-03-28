@@ -11,9 +11,9 @@
 }
 
 .table {
-  min-width: 640px;
+  min-width: 1280px;
   width: 100%;
-  table-layout: fixed;
+  table-layout: auto;
   text-align: left;
 }
 
@@ -29,9 +29,38 @@
   padding: 1rem;
 }
 
+.stickyRankHead {
+  position: sticky;
+  left: 0;
+  z-index: 7;
+  min-width: 5.5rem;
+  background: var(--surface-1);
+}
+
+.stickyTeamHead {
+  position: sticky;
+  left: 5.5rem;
+  z-index: 7;
+  min-width: 11rem;
+  background: var(--surface-1);
+  box-shadow: 1px 0 0 rgb(255 255 255 / 0.06);
+}
+
 .cellHeadRight {
   padding: 1rem;
   text-align: right;
+}
+
+.cellHeadCenter {
+  padding: 0.75rem 0.5rem;
+  text-align: center;
+}
+
+.cellHeadTiny {
+  padding: 0.55rem 0.35rem;
+  text-align: right;
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
 }
 
 .row {
@@ -56,15 +85,41 @@
   padding: 0.75rem 1rem;
 }
 
+.stickyRankCell {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  min-width: 5.5rem;
+  background: inherit;
+}
+
 .team,
 .score {
   color: var(--text-primary);
   padding: 0.75rem 1rem;
 }
 
+.stickyTeamCell {
+  position: sticky;
+  left: 5.5rem;
+  z-index: 5;
+  min-width: 11rem;
+  background: inherit;
+  box-shadow: 1px 0 0 rgb(255 255 255 / 0.06);
+}
+
 .score {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.scoreCompact {
+  color: var(--text-primary);
+  padding: 0.65rem 0.35rem;
+  text-align: right;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  min-width: 2.5rem;
 }
 
 .total {
@@ -76,6 +131,12 @@
   padding: 0.75rem 1rem;
 }
 
+.empty {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 1rem;
+}
+
 :global(html[data-theme="light"]) .wrap {
   border-color: var(--border-subtle);
   background: var(--surface-1);
@@ -84,6 +145,11 @@
 :global(html[data-theme="light"]) .head {
   background: var(--surface-3);
   color: var(--text-muted);
+}
+
+:global(html[data-theme="light"]) .stickyRankHead,
+:global(html[data-theme="light"]) .stickyTeamHead {
+  background: var(--surface-3);
 }
 
 :global(html[data-theme="light"]) .team,
