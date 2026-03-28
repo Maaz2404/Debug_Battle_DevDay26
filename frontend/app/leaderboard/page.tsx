@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { BrandLogo } from "@/components/BrandLogo";
@@ -29,7 +30,7 @@ function formatClock(endsAt: number | null, now: number) {
   return `${minutes}:${seconds}`;
 }
 
-export default function LeaderboardPage() {
+function LeaderboardPageContent() {
   const params = useSearchParams();
   const fullscreen = params.get("display") === "fullscreen";
   useRequireAuth();
@@ -93,5 +94,13 @@ export default function LeaderboardPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function LeaderboardPage() {
+  return (
+    <Suspense fallback={<div className={styles.page} />}>
+      <LeaderboardPageContent />
+    </Suspense>
   );
 }
