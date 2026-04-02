@@ -28,5 +28,10 @@ export const endpoints = {
     resumeRound: (roundNumber: number) => `${API_BASE_URL}/admin/round/${roundNumber}/resume`,
     endRound: (roundNumber: number) => `${API_BASE_URL}/admin/round/${roundNumber}/end`,
     resetRound: (roundNumber: number) => `${API_BASE_URL}/admin/round/${roundNumber}/reset`,
+    teams: `${API_BASE_URL}/admin/teams`,
+    resetTeamsPassword: `${API_BASE_URL}/admin/teams/reset-password`,
+    teamById: (teamId: string) => `${API_BASE_URL}/admin/teams/${teamId}`,
+    questions: `${API_BASE_URL}/admin/questions`,
+    questionById: (questionId: string) => `${API_BASE_URL}/admin/questions/${questionId}`,
   },
 };

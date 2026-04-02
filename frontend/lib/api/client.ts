@@ -79,6 +79,30 @@ export interface AdminRoundInfo {
   ended_at: string | null;
 }
 
+export interface AdminTeamInfo {
+  id: string;
+  name: string;
+  auth_user_id: string;
+  created_at: string;
+}
+
+export interface AdminQuestionInfo {
+  id: string;
+  round_id: string;
+  round_number: number | null;
+  position: number;
+  title: string;
+  description: string;
+  code: string;
+  language: string;
+  time_limit_seconds: number;
+  base_score: number;
+  test_cases: Array<{
+    input: string;
+    expected_output: string;
+  }>;
+}
+
 type BackendCompetitionState = {
   round?: {
     round_id?: string | null;
@@ -729,6 +753,138 @@ export const apiClient = {
       token,
     });
 
+    return { ok: true };
+  },
+
+  getAdminTeams: async (token: string): Promise<AdminTeamInfo[]> => {
+    if (!REAL_BACKEND_ENABLED) {
+      return [];
+    }
+
+    const payload = await apiRequest<{ teams?: AdminTeamInfo[] }>(endpoints.admin.teams, {
+      method: "GET",
+      token,
+    });
+
+    return payload.teams || [];
+  },
+
+  createAdminTeam: async (
+    token: string,
+    payload: { name: string; password: string },
+  ): Promise<AdminTeamInfo> => {
+    const response = await apiRequest<{ team: AdminTeamInfo }>(endpoints.admin.teams, {
+      method: "POST",
+      token,
+      body: payload,
+    });
+    return response.team;
+  },
+
+  updateAdminTeam: async (
+    token: string,
+    teamId: string,
+    payload: { name?: string; password?: string },
+  ): Promise<AdminTeamInfo> => {
+    const response = await apiRequest<{ team: AdminTeamInfo }>(endpoints.admin.teamById(teamId), {
+      method: "PATCH",
+      token,
+      body: payload,
+    });
+    return response.team;
+  },
+
+  deleteAdminTeam: async (token: string, teamId: string) => {
+    await apiRequest(endpoints.admin.teamById(teamId), {
+      method: "DELETE",
+      token,
+    });
+    return { ok: true };
+  },
+
+  resetAllTeamsPassword: async (token: string, password: string) => {
+    const response = await apiRequest<{
+      action: string;
+      total: number;
+      updated: number;
+      failed: number;
+      failed_team_ids: string[];
+    }>(endpoints.admin.resetTeamsPassword, {
+      method: "POST",
+      token,
+      body: { password },
+    });
+
+    return response;
+  },
+
+  getAdminQuestions: async (token: string, roundNumber?: number): Promise<AdminQuestionInfo[]> => {
+    if (!REAL_BACKEND_ENABLED) {
+      return [];
+    }
+
+    const url = roundNumber
+      ? `${endpoints.admin.questions}?roundNumber=${encodeURIComponent(String(roundNumber))}`
+      : endpoints.admin.questions;
+
+    const payload = await apiRequest<{ questions?: AdminQuestionInfo[] }>(url, {
+      method: "GET",
+      token,
+    });
+
+    return payload.questions || [];
+  },
+
+  createAdminQuestion: async (
+    token: string,
+    payload: {
+      round_number: number;
+      position: number;
+      title: string;
+      description: string;
+      code: string;
+      language: string;
+      time_limit_seconds: number;
+      base_score: number;
+      test_cases: Array<{ input: string; expected_output: string }>;
+    },
+  ): Promise<AdminQuestionInfo> => {
+    const response = await apiRequest<{ question: AdminQuestionInfo }>(endpoints.admin.questions, {
+      method: "POST",
+      token,
+      body: payload,
+    });
+    return response.question;
+  },
+
+  updateAdminQuestion: async (
+    token: string,
+    questionId: string,
+    payload: {
+      round_number?: number;
+      position?: number;
+      title?: string;
+      description?: string;
+      code?: string;
+      language?: string;
+      time_limit_seconds?: number;
+      base_score?: number;
+      test_cases?: Array<{ input: string; expected_output: string }>;
+    },
+  ): Promise<AdminQuestionInfo> => {
+    const response = await apiRequest<{ question: AdminQuestionInfo }>(endpoints.admin.questionById(questionId), {
+      method: "PATCH",
+      token,
+      body: payload,
+    });
+    return response.question;
+  },
+
+  deleteAdminQuestion: async (token: string, questionId: string) => {
+    await apiRequest(endpoints.admin.questionById(questionId), {
+      method: "DELETE",
+      token,
+    });
     return { ok: true };
   },
 };

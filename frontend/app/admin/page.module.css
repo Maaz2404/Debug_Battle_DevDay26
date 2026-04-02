@@ -73,6 +73,14 @@
   padding: 1.5rem;
 }
 
+.cardWide {
+  margin-top: 2rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+  background: var(--surface-2);
+  padding: 1.5rem;
+}
+
 .cardLabel {
   color: var(--accent-soft-text);
   font-size: 0.75rem;
@@ -150,6 +158,100 @@
   color: var(--text-strong);
   font-size: 0.95rem;
   padding: 0.55rem 0.75rem;
+}
+
+.textArea {
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.5rem;
+  background: var(--surface-3);
+  color: var(--text-strong);
+  font-size: 0.95rem;
+  padding: 0.55rem 0.75rem;
+  min-height: 6rem;
+  resize: vertical;
+}
+
+.dataList {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.dataItem {
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  background: var(--surface-3);
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.inlineGrid {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.inlineGridCompact {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.fieldRow {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.fieldGroup {
+  display: grid;
+  gap: 0.35rem;
+  align-content: start;
+}
+
+.passwordRow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.questionToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.toolbarControls {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.questionCreatePanel {
+  margin-top: 1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  background: var(--surface-3);
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.questionWorkspace {
+  margin-top: 1rem;
+  display: block;
+}
+
+.questionEditor {
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  background: var(--surface-3);
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.5rem;
 }
 
 .authError {
