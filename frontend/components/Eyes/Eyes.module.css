@@ -1,0 +1,31 @@
+.container{
+  position: absolute;
+  left: 50%;
+  top: 30%;
+  transform: translate(-50%, 0);
+  display: flex;
+  gap: 8px;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.eye{
+  width: 20px;
+  height: 20px;
+  background: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+  overflow: hidden;
+}
+
+.pupil{
+  width: 12px;
+  height: 12px;
+  background: var(--color-dark-blue);
+  border-radius: 50%;
+  transform: translate(0px, 0px);
+  transition: transform 0.06s linear;
+}

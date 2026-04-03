@@ -55,7 +55,7 @@ function LeaderboardPageContent() {
   return (
     <div className={styles.page}>
       <HeaderBar
-        left={<BrandLogo href="/leaderboard" compact />}
+        left={<BrandLogo href="/leaderboard" compact withImage />}
         center={
           <div className={styles.headerCenter}>
             <div className={styles.statCard}>

@@ -310,7 +310,7 @@ export default function CompetePage() {
   return (
     <div className={styles.page}>
       <HeaderBar
-        left={<BrandLogo href="/compete" compact />}
+        left={<BrandLogo href="/compete" compact withImage />}
         center={
           <div className={styles.headerCenter}>
             <div className={styles.statCard}>
