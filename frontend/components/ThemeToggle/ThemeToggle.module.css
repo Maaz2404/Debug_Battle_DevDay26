@@ -1,18 +1,19 @@
 .button {
   position: relative;
   display: grid;
-  width: 54px;
-  height: 54px;
+  width: 35px;
+  height: 35px;
   place-items: center;
-  border: 1px solid var(--border-strong);
+  border: 2px solid var(--surface-3);
   border-radius: 999px;
-  background: var(--surface-1);
+  background: #f2f1f1;
   color: var(--warning);
   cursor: pointer;
   transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
   margin: auto;
   margin-left: 0;
   margin-right: 0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.422) inset;
 }
 
 .button:hover {

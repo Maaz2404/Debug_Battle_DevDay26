@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Bree+Serif&display=swap');
+
 :root {
   --background: #020617;
   --foreground: #dbe8f5;
@@ -6,7 +8,7 @@
   --bg-glow-1: #0e749070;
   --bg-glow-2: #155e7545;
 
-  --surface-1: rgb(15 23 42 / 0.8);
+  --surface-1: rgba(15, 23, 42, 0.8);
   --surface-2: rgb(15 23 42 / 0.6);
   --surface-3: rgb(2 6 23 / 0.8);
 
@@ -102,6 +104,18 @@ body {
   box-sizing: border-box;
   scrollbar-width: thin;
   scrollbar-color: var(--accent) var(--background);
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --font-landing: 'Bree Serif', sans-serif;
+  --font-navlink: 'Poppins', sans-serif;
+  --font-heading: 'DM Sans', sans-serif;
+
+  --color-light-gray: #e7e6e4;
+  --color-dark-blue: #020617;
+  /* --color-dark-blue: #000146; */
 }
 
 img,
@@ -117,7 +131,87 @@ html[data-theme="light"] * {
   scrollbar-color: var(--accent-soft-border) #dbeafe;
 }
 
+/* Global Header Styles */
+header {
+  animation: slideInDown 0.6s ease-out forwards;
+}
+
+/* Global Admin Link Styles */
+.adminLink {
+  color: var(--color-light-gray);
+  text-decoration: none;
+  transition: all 0.3s ease;
+  position: relative;
+  top: 2px;
+}
+
+.adminLink::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  width: 100%;
+  height: 2px;
+  background-color: var(--color-light-gray);
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 0.3s ease;
+}
+
+.adminLink:hover::before {
+  transform: scaleX(1);
+  transform-origin: left;
+}
+
+/* Light Theme Admin Link Override */
+html[data-theme="light"] .adminLink {
+  color: #0b2a3d;
+}
+
+html[data-theme="light"] .adminLink::before {
+  background-color: #0b2a3d;
+}
+
+/* Animation Keyframes */
+@keyframes slideInDown {
+  0% {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInUp {
+  0% {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 pre,
 code {
   font-family: var(--font-code), monospace;
 }
+
+
+/* bree serif */
+/* DM SANS */
+/* Poppins */
