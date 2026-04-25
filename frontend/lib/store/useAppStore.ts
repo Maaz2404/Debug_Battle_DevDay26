@@ -50,6 +50,7 @@ interface AppState {
 const defaultCompetition: CompetitionState = {
   round: 1,
   status: "IDLE",
+  phase: "none",
   questionIndex: 1,
   totalQuestions: 10,
   roundEndsAt: null,

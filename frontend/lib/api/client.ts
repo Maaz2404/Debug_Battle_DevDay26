@@ -51,6 +51,7 @@ const defaultQuestion: Question = {
 const defaultCompetition: CompetitionState = {
   round: 1,
   status: "IDLE",
+  phase: "none",
   questionIndex: 1,
   totalQuestions: 10,
   roundEndsAt: null,
@@ -107,8 +108,12 @@ type BackendCompetitionState = {
   round?: {
     round_id?: string | null;
     round_number?: number | null;
+    phase?: string;
     current_question_index?: number;
     time_remaining_seconds?: number;
+    round_time_remaining_seconds?: number;
+    next_start_at?: number | null;
+    total_questions?: number;
   };
   current_question?: {
     id?: string;
@@ -137,8 +142,12 @@ type BackendRoundLifecyclePayload = {
   round_id?: string;
   round_number?: number;
   index?: number;
+  phase?: string;
+  total_questions?: number;
   duration_seconds?: number;
   time_remaining_seconds?: number;
+  round_time_remaining_seconds?: number;
+  next_start_at?: number | null;
   start_in_seconds?: number;
   scheduled_start_at?: number;
   status?: string;
@@ -229,6 +238,7 @@ export function createDemoLoginResponse(teamCode = "DEMO", participantName = "Fr
     competition: {
       ...defaultCompetition,
       status: lobbyMs > 0 ? "IDLE" : "ACTIVE",
+      phase: lobbyMs > 0 ? "none" : "question",
       roundEndsAt: now + roundMs,
       questionEndsAt: lobbyMs > 0 ? null : now + Math.max(1, DEMO_QUESTION_MINUTES) * 60 * 1000,
       nextQuestionAt: lobbyMs > 0 ? now + lobbyMs : null,
@@ -546,42 +556,52 @@ export const apiClient = {
       handlers.onLeaderboard?.(mapBackendLeaderboard(payload.leaderboard));
     };
 
-    const questionHandler = (payload: {
-      question?: {
-        id?: string;
-        title?: string;
-        description?: string;
-        code?: string;
-        language?: string;
-        time_limit_seconds?: number;
-        test_cases?: Array<{
-          input?: string | string[];
-          expected_output?: string | string[];
-        }>;
-      };
-    }) => {
-      handlers.onQuestion?.(mapBackendQuestion(payload.question));
-    };
-
     const toCompetitionFromLifecycle = (
       payload: BackendRoundLifecyclePayload,
       status: LoginResponse["competition"]["status"],
     ): LoginResponse["competition"] => {
       const now = Date.now();
-      const questionSeconds = Number(payload.question?.time_limit_seconds || payload.time_remaining_seconds || 0);
-      const roundSeconds = Number(payload.duration_seconds || payload.time_remaining_seconds || questionSeconds || 0);
+      const phaseRaw = String(payload.phase || "question").toLowerCase();
+      const phase: LoginResponse["competition"]["phase"] =
+        phaseRaw === "gap" || phaseRaw === "ended" || phaseRaw === "none"
+          ? phaseRaw
+          : "question";
+      const questionSeconds = Number(payload.time_remaining_seconds || payload.question?.time_limit_seconds || 0);
+      const roundSeconds = Number(
+        payload.round_time_remaining_seconds
+        || payload.duration_seconds
+        || payload.time_remaining_seconds
+        || payload.question?.time_limit_seconds
+        || 0,
+      );
       const roundEndsAt = roundSeconds > 0 ? now + (roundSeconds * 1000) : null;
-      const questionEndsAt = questionSeconds > 0 ? now + (questionSeconds * 1000) : roundEndsAt;
+      const questionEndsAt = phase === "question" && questionSeconds > 0
+        ? now + (questionSeconds * 1000)
+        : null;
+      const providedNextStartAt = Number(payload.next_start_at || 0);
+      const fallbackNextStartAt = phase === "gap" && questionSeconds > 0
+        ? now + (questionSeconds * 1000)
+        : null;
 
       return {
         round: Number(payload.round_number || 1),
         status,
+        phase,
         questionIndex: Number(payload.index || 0) + 1,
-        totalQuestions: 10,
+        totalQuestions: Number(payload.total_questions || 10),
         roundEndsAt,
         questionEndsAt,
-        nextQuestionAt: null,
+        nextQuestionAt: providedNextStartAt > now ? providedNextStartAt : fallbackNextStartAt,
       };
+    };
+
+    const questionHandler = (payload: BackendRoundLifecyclePayload) => {
+      handlers.onCompetitionState?.(toCompetitionFromLifecycle(payload, "ACTIVE"));
+      handlers.onQuestion?.(mapBackendQuestion(payload.question));
+    };
+
+    const questionGapHandler = (payload: BackendRoundLifecyclePayload) => {
+      handlers.onCompetitionState?.(toCompetitionFromLifecycle(payload, "ACTIVE"));
     };
 
     const roundStartHandler = (payload: BackendRoundLifecyclePayload) => {
@@ -621,8 +641,9 @@ export const apiClient = {
       handlers.onCompetitionState?.({
         round: Number(payload.round_number || 1),
         status: "IDLE",
+        phase: "none",
         questionIndex: Number(payload.index || 0) + 1,
-        totalQuestions: 10,
+        totalQuestions: Number(payload.total_questions || 10),
         roundEndsAt: null,
         questionEndsAt: null,
         nextQuestionAt,
@@ -654,6 +675,7 @@ export const apiClient = {
     socket.on("round:resumed", roundResumedHandler);
     socket.on("round:end", roundEndHandler);
     socket.on("question:next", questionHandler);
+    socket.on("question:gap", questionGapHandler);
     socket.on("run:result", runResultHandler);
     socket.on("submission:result", submissionResultHandler);
     socket.on("leaderboard:update", leaderboardHandler);
@@ -666,6 +688,7 @@ export const apiClient = {
     listeners.push(() => socket.off("round:resumed", roundResumedHandler));
     listeners.push(() => socket.off("round:end", roundEndHandler));
     listeners.push(() => socket.off("question:next", questionHandler));
+    listeners.push(() => socket.off("question:gap", questionGapHandler));
     listeners.push(() => socket.off("run:result", runResultHandler));
     listeners.push(() => socket.off("submission:result", submissionResultHandler));
     listeners.push(() => socket.off("leaderboard:update", leaderboardHandler));

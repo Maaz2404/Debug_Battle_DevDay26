@@ -1,6 +1,7 @@
 export type Language = "javascript" | "python" | "cpp";
 
 export type RoundStatus = "IDLE" | "ACTIVE" | "PAUSED" | "ENDED";
+export type CompetitionPhase = "none" | "question" | "gap" | "ended";
 
 export type ConnectionStatus = "connected" | "reconnecting" | "disconnected";
 
@@ -25,6 +26,7 @@ export interface Question {
 export interface CompetitionState {
   round: number;
   status: RoundStatus;
+  phase: CompetitionPhase;
   questionIndex: number;
   totalQuestions: number;
   roundEndsAt: number | null;

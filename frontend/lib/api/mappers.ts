@@ -14,12 +14,15 @@ const defaultStarterCode = {
 
 type BackendRound = {
   status?: string;
+  phase?: string;
   round_number?: number | null;
   round_id?: string | null;
   current_question_index?: number;
   current_question_id?: string | null;
   time_remaining_seconds?: number;
+  round_time_remaining_seconds?: number;
   next_start_at?: number | null;
+  total_questions?: number;
 };
 
 type BackendStateResponse = {
@@ -152,18 +155,31 @@ function buildPlaceholderQuestion(questionId: string): Question {
 export function mapBackendStateToCompetitionState(raw: BackendStateResponse): CompetitionState {
   const now = Date.now();
   const round = raw.round || {};
-  const remainingSeconds = Number(round.time_remaining_seconds || 0);
-  const endsAt = remainingSeconds > 0 ? now + (remainingSeconds * 1000) : null;
+  const phaseRaw = String(round.phase || "none").toLowerCase();
+  const phase: CompetitionState["phase"] =
+    phaseRaw === "question" || phaseRaw === "gap" || phaseRaw === "ended"
+      ? phaseRaw
+      : "none";
+  const questionRemainingSeconds = Number(round.time_remaining_seconds || 0);
+  const roundRemainingSeconds = Number(round.round_time_remaining_seconds ?? questionRemainingSeconds);
+  const roundEndsAt = roundRemainingSeconds > 0 ? now + (roundRemainingSeconds * 1000) : null;
+  const questionEndsAt = phase === "question" && questionRemainingSeconds > 0
+    ? now + (questionRemainingSeconds * 1000)
+    : null;
   const nextStartAt = Number(round.next_start_at || 0);
+  const fallbackNextAt = phase === "gap" && questionRemainingSeconds > 0
+    ? now + (questionRemainingSeconds * 1000)
+    : null;
 
   return {
     round: Number(round.round_number || 1),
     status: (String(round.status || "IDLE").toUpperCase() as CompetitionState["status"]),
+    phase,
     questionIndex: Number(round.current_question_index || 0) + 1,
-    totalQuestions: 10,
-    roundEndsAt: endsAt,
-    questionEndsAt: endsAt,
-    nextQuestionAt: nextStartAt > now ? nextStartAt : null,
+    totalQuestions: Number(round.total_questions || 10),
+    roundEndsAt,
+    questionEndsAt,
+    nextQuestionAt: nextStartAt > now ? nextStartAt : fallbackNextAt,
   };
 }
 

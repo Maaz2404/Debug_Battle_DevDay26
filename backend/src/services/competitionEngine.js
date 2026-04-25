@@ -40,9 +40,9 @@ function getCurrentQuestionKey(roundId) {
 }
 
 function getQuestionGapSeconds() {
-  const parsed = Number(env.QUESTION_GAP_SECONDS || 30);
+  const parsed = Number(env.QUESTION_GAP_SECONDS || 10);
   if (!Number.isFinite(parsed) || parsed < 0) {
-    return 30;
+    return 10;
   }
   return parsed;
 }
@@ -50,6 +50,64 @@ function getQuestionGapSeconds() {
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function getQuestionDurationMs(state, index) {
+  const seconds = Number(state?.questionDurations?.[index] || 180);
+  return Math.max(0, seconds * 1000);
+}
+
+function getTransitionRemainingMs(state, now = Date.now()) {
+  if (state?.status === 'PAUSED') {
+    return Math.max(0, Number(state?.pausedRemainingMs || 0));
+  }
+
+  return Math.max(0, Number(state?.nextTransitionAt || 0) - now);
+}
+
+function getRoundRemainingMs(state, now = Date.now()) {
+  const totalQuestions = Number(state?.questionIds?.length || 0);
+  if (totalQuestions <= 0) {
+    return 0;
+  }
+
+  const currentIndex = Math.max(0, Number(state?.currentQuestionIndex || 0));
+  const gapMs = Math.max(0, Number(state?.gapSeconds || 0)) * 1000;
+  const transitionRemainingMs = getTransitionRemainingMs(state, now);
+
+  if (state?.phase === 'question') {
+    let futureQuestionMs = 0;
+    for (let index = currentIndex + 1; index < totalQuestions; index += 1) {
+      futureQuestionMs += getQuestionDurationMs(state, index);
+    }
+
+    const futureGapCount = Math.max(0, totalQuestions - currentIndex - 1);
+    return transitionRemainingMs + futureQuestionMs + (futureGapCount * gapMs);
+  }
+
+  if (state?.phase === 'gap') {
+    let futureQuestionMs = 0;
+    for (let index = currentIndex + 1; index < totalQuestions; index += 1) {
+      futureQuestionMs += getQuestionDurationMs(state, index);
+    }
+
+    const futureGapCount = Math.max(0, totalQuestions - currentIndex - 2);
+    return transitionRemainingMs + futureQuestionMs + (futureGapCount * gapMs);
+  }
+
+  return 0;
+}
+
+function getRoundRemainingSeconds(state, now = Date.now()) {
+  return Math.max(0, Math.ceil(getRoundRemainingMs(state, now) / 1000));
+}
+
+function getQuestionWindowRemainingSeconds(state, now = Date.now()) {
+  if (state?.phase !== 'question') {
+    return 0;
+  }
+
+  return Math.max(0, Math.ceil(getTransitionRemainingMs(state, now) / 1000));
 }
 
 async function getRoundByNumber(roundNumber) {
@@ -372,6 +430,7 @@ async function persistRoundLiveKeys(state) {
 }
 
 async function emitQuestionNext(state) {
+  const now = Date.now();
   const questionId = state.questionIds[state.currentQuestionIndex];
   const { data, error } = await supabaseAdmin
     .from('questions')
@@ -396,10 +455,31 @@ async function emitQuestionNext(state) {
     question: data,
     time_limit_seconds: data.time_limit_seconds,
     phase: state.phase,
+    time_remaining_seconds: getQuestionWindowRemainingSeconds(state, now),
+    round_time_remaining_seconds: getRoundRemainingSeconds(state, now),
+    total_questions: state.questionIds.length,
+    next_start_at: null,
+  });
+}
+
+async function emitQuestionGap(state) {
+  const now = Date.now();
+
+  emitToRoom(getCompetitionRoom(), 'question:gap', {
+    round_id: state.roundId,
+    round_number: state.roundNumber,
+    index: state.currentQuestionIndex,
+    next_index: state.currentQuestionIndex + 1,
+    phase: state.phase,
+    time_remaining_seconds: Math.max(0, Math.ceil(getTransitionRemainingMs(state, now) / 1000)),
+    round_time_remaining_seconds: getRoundRemainingSeconds(state, now),
+    total_questions: state.questionIds.length,
+    next_start_at: Number(state.nextTransitionAt || 0) || null,
   });
 }
 
 async function emitRoundStart(state) {
+  const now = Date.now();
   const questionId = state.questionIds[0];
   const { data: question } = await supabaseAdmin
     .from('questions')
@@ -414,6 +494,11 @@ async function emitRoundStart(state) {
       + ((state.questionDurations.length - 1) * state.gapSeconds),
     question: question || null,
     index: 0,
+    phase: state.phase,
+    time_remaining_seconds: getQuestionWindowRemainingSeconds(state, now),
+    round_time_remaining_seconds: getRoundRemainingSeconds(state, now),
+    total_questions: state.questionIds.length,
+    next_start_at: null,
   });
 }
 
@@ -426,24 +511,35 @@ async function emitRoundEnd(state) {
 }
 
 async function emitRoundPaused(state) {
+  const now = Date.now();
+  const transitionRemainingSeconds = Math.max(0, Math.ceil(getTransitionRemainingMs(state, now) / 1000));
+
   emitToRoom(getCompetitionRoom(), 'round:paused', {
     round_id: state.roundId,
     round_number: state.roundNumber,
     status: 'PAUSED',
     phase: state.phase,
     index: state.currentQuestionIndex,
-    time_remaining_seconds: Math.max(0, Math.floor((state.pausedRemainingMs || 0) / 1000)),
+    time_remaining_seconds: transitionRemainingSeconds,
+    round_time_remaining_seconds: getRoundRemainingSeconds(state, now),
+    total_questions: state.questionIds.length,
+    next_start_at: state.phase === 'gap' ? (now + Math.max(0, Number(state.pausedRemainingMs || 0))) : null,
   });
 }
 
 async function emitRoundResumed(state) {
+  const now = Date.now();
+
   emitToRoom(getCompetitionRoom(), 'round:resumed', {
     round_id: state.roundId,
     round_number: state.roundNumber,
     status: 'ACTIVE',
     phase: state.phase,
     index: state.currentQuestionIndex,
-    time_remaining_seconds: Math.max(0, Math.ceil((state.nextTransitionAt - Date.now()) / 1000)),
+    time_remaining_seconds: Math.max(0, Math.ceil(getTransitionRemainingMs(state, now) / 1000)),
+    round_time_remaining_seconds: getRoundRemainingSeconds(state, now),
+    total_questions: state.questionIds.length,
+    next_start_at: state.phase === 'gap' ? Number(state.nextTransitionAt || 0) : null,
   });
 }
 
@@ -491,6 +587,7 @@ async function advanceRoundTimeline(roundId) {
     state.questionStartedAt = 0;
     await writeRoundRuntimeState(state);
     await persistRoundLiveKeys(state);
+    await emitQuestionGap(state);
     await scheduleNextTransition(state);
     return;
   }

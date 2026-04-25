@@ -33,7 +33,7 @@ export const env = {
     .map((value) => value.trim())
     .filter(Boolean),
   ADMIN_EMAILS: process.env.ADMIN_EMAILS || '',
-  QUESTION_GAP_SECONDS: Number(process.env.QUESTION_GAP_SECONDS || 30),
+  QUESTION_GAP_SECONDS: Number(process.env.QUESTION_GAP_SECONDS || 10),
   LEADERBOARD_BROADCAST_INTERVAL_MS: Number(process.env.LEADERBOARD_BROADCAST_INTERVAL_MS || 1000),
   ONECOMPILER_API_URL: process.env.ONECOMPILER_API_URL,
   ONECOMPILER_API_KEY: process.env.ONECOMPILER_API_KEY,

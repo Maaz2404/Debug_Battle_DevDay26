@@ -88,6 +88,42 @@
   padding: 0.5rem 1rem;
 }
 
+.gapWrap,
+.acceptedWrap {
+  margin: 0.5rem auto 0;
+  display: flex;
+  max-width: 1600px;
+  justify-content: center;
+  padding: 0 1rem;
+}
+
+.gapNotice,
+.acceptedNotice {
+  width: 100%;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  text-align: center;
+  padding: 0.5rem 1rem;
+}
+
+.gapNotice {
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.gapValue {
+  color: var(--accent-soft-text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.acceptedNotice {
+  border: 1px solid var(--success);
+  background: var(--success-soft-bg);
+  color: var(--success-soft-text);
+}
+
 .mainGrid {
   margin: 0 auto;
   display: grid;
@@ -207,6 +243,11 @@
 
 @media (min-width: 768px) {
   .warningWrap {
+    padding: 0 1.5rem;
+  }
+
+  .gapWrap,
+  .acceptedWrap {
     padding: 0 1.5rem;
   }
 

@@ -73,6 +73,7 @@ export default function LobbyPage() {
     setCompetition({
       ...competition,
       status: "ACTIVE",
+      phase: "question",
       questionEndsAt: Date.now() + Number(process.env.NEXT_PUBLIC_DEMO_QUESTION_MINUTES ?? "3") * 60 * 1000,
       nextQuestionAt: null,
     });

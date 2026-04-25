@@ -84,6 +84,7 @@ export default function CompetePage() {
   const user = useRequireAuth();
   const { logout, loggingOut } = useLogout();
   const [now, setNow] = useState(() => Date.now());
+  const [showAcceptedPopup, setShowAcceptedPopup] = useState(false);
 
   const {
     competition,
@@ -134,6 +135,19 @@ export default function CompetePage() {
 
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!submissionResult || submissionResult.verdict !== "ACCEPTED") {
+      return;
+    }
+
+    setShowAcceptedPopup(true);
+    const timeout = window.setTimeout(() => {
+      setShowAcceptedPopup(false);
+    }, 3000);
+
+    return () => window.clearTimeout(timeout);
+  }, [currentQuestion?.id, submissionResult]);
 
   useEffect(() => {
     if (connectionStatus !== "disconnected") {
@@ -226,8 +240,11 @@ export default function CompetePage() {
     setSubmissionResult,
   ]);
 
+  const isGapPhase = competition?.phase === "gap";
+  const isAcceptedForQuestion = submissionResult?.verdict === "ACCEPTED";
+
   const handleRun = useCallback(async () => {
-    if (!user?.token || !currentQuestion) {
+    if (!user?.token || !currentQuestion || isGapPhase || isAcceptedForQuestion) {
       return;
     }
 
@@ -259,6 +276,8 @@ export default function CompetePage() {
   }, [
     codeDraft,
     currentQuestion,
+    isAcceptedForQuestion,
+    isGapPhase,
     language,
     setIsRunning,
     setPendingRunSubmissionId,
@@ -266,7 +285,10 @@ export default function CompetePage() {
     user?.token,
   ]);
 
-  const canSubmit = useMemo(() => !!runResult?.passed && !isRunning && !isSubmitting, [isRunning, isSubmitting, runResult?.passed]);
+  const canSubmit = useMemo(
+    () => !!runResult?.passed && !isRunning && !isSubmitting && !isAcceptedForQuestion && !isGapPhase,
+    [isAcceptedForQuestion, isGapPhase, isRunning, isSubmitting, runResult?.passed],
+  );
 
   const handleSubmit = useCallback(async () => {
     if (!user?.token || !currentQuestion || !canSubmit) {
@@ -348,6 +370,20 @@ export default function CompetePage() {
         </div>
       ) : null}
 
+      {isGapPhase && competition?.nextQuestionAt ? (
+        <div className={styles.gapWrap}>
+          <div className={styles.gapNotice}>
+            Question time ended. Next question starts in <span className={styles.gapValue}>{formatClock(competition.nextQuestionAt, now)}</span>
+          </div>
+        </div>
+      ) : null}
+
+      {showAcceptedPopup ? (
+        <div className={styles.acceptedWrap}>
+          <div className={styles.acceptedNotice}>Your submission was accepted.</div>
+        </div>
+      ) : null}
+
       <main className={styles.mainGrid}>
         <div className={styles.leftCol}>
           <section className={styles.questionTimeCard}>
@@ -376,7 +412,7 @@ export default function CompetePage() {
 
               <button
                 onClick={handleRun}
-                disabled={isRunning || isSubmitting || !currentQuestion}
+                disabled={isRunning || isSubmitting || !currentQuestion || isAcceptedForQuestion || isGapPhase}
                 className={styles.run}
               >
                 {isRunning ? "Running..." : "Run"}
@@ -387,7 +423,7 @@ export default function CompetePage() {
                 disabled={!canSubmit}
                 className={styles.submit}
               >
-                {isSubmitting ? "Submitting..." : "Submit"}
+                {isSubmitting ? "Submitting..." : (isAcceptedForQuestion ? "Accepted" : "Submit")}
               </button>
             </div>
           </div>

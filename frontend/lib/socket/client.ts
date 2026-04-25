@@ -4,6 +4,7 @@ export type SocketEventName =
   | "competition:state"
   | "round:start"
   | "question:next"
+  | "question:gap"
   | "round:paused"
   | "round:resumed"
   | "round:end"
