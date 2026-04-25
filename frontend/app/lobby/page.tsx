@@ -127,7 +127,7 @@ export default function LobbyPage() {
   return (
     <div className={styles.page}>
       <HeaderBar
-        left={<BrandLogo href="/lobby" compact />}
+        left={<BrandLogo href="/lobby" compact withImage />}
         right={(
           <div className={styles.headerActions}>
             <ConnectionStatusBadge status={connectionStatus} />

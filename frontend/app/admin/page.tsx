@@ -608,7 +608,7 @@ export default function AdminPage() {
 
   return (
     <div className={styles.page}>
-      <HeaderBar left={<BrandLogo href="/admin" compact />} right={<ConnectionStatusBadge status={connectionStatus} />} />
+      <HeaderBar left={<BrandLogo href="/admin" compact withImage />} right={<ConnectionStatusBadge status={connectionStatus} />} />
 
       {!isAdmin ? (
         <main className={styles.main}>

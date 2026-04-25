@@ -65,12 +65,18 @@
 }
 
 .card {
+  margin: auto;
   margin-top: 2rem;
   max-width: 48rem;
   border: 1px solid var(--border-subtle);
   border-radius: 1rem;
   background: var(--surface-2);
   padding: 1.5rem;
+}
+
+.card button{
+  margin-top: 10px;
+  padding: 20px 20px;
 }
 
 .cardWide {
@@ -143,7 +149,7 @@
   margin-top: 1rem;
   display: grid;
   gap: 0.5rem;
-  max-width: 28rem;
+  width: 100%;
 }
 
 .fieldLabel {
@@ -158,6 +164,8 @@
   color: var(--text-strong);
   font-size: 0.95rem;
   padding: 0.55rem 0.75rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .textArea {
@@ -169,6 +177,8 @@
   padding: 0.55rem 0.75rem;
   min-height: 6rem;
   resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .dataList {
@@ -270,6 +280,8 @@
   font-weight: 600;
   padding: 0.5rem 1rem;
   transition: background-color 120ms ease;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .start:hover {

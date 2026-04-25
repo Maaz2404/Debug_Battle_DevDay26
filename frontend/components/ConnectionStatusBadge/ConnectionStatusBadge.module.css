@@ -6,7 +6,8 @@
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.06em;
-  padding: 1rem 0.75rem;
+  padding: 0 0.75rem;
+  height: 34px;
   text-transform: uppercase;
 }
 
