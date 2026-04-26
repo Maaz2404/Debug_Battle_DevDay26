@@ -21,10 +21,10 @@ const monacoLanguageMap: Record<Language, string> = {
 
 export function CodeEditor({ language, code, disabled, onChange }: CodeEditorProps) {
   const [editorTheme, setEditorTheme] = useState("vs-dark");
-  const [editorHeight, setEditorHeight] = useState(360);
+  const [editorHeight, setEditorHeight] = useState(420);
   const [isResizing, setIsResizing] = useState(false);
   const startYRef = useRef(0);
-  const startHeightRef = useRef(360);
+  const startHeightRef = useRef(420);
 
   useEffect(() => {
     const applyTheme = () => {
@@ -47,7 +47,7 @@ export function CodeEditor({ language, code, disabled, onChange }: CodeEditorPro
   }, []);
 
   useEffect(() => {
-    const preferredHeight = Math.max(320, Math.min(560, Math.floor(window.innerHeight * 0.44)));
+    const preferredHeight = Math.max(320, Math.min(560, Math.floor(window.innerHeight * 0.48)));
     setEditorHeight(preferredHeight);
   }, []);
 

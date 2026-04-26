@@ -370,17 +370,22 @@ export default function CompetePage() {
         </div>
       ) : null}
 
-      {isGapPhase && competition?.nextQuestionAt ? (
-        <div className={styles.gapWrap}>
-          <div className={styles.gapNotice}>
-            Question time ended. Next question starts in <span className={styles.gapValue}>{formatClock(competition.nextQuestionAt, now)}</span>
+      {showAcceptedPopup ? (
+        <div className={styles.acceptedPopupWrap}>
+          <div className={styles.acceptedPopup}>
+            <p className={styles.acceptedPopupLabel}>Submission Accepted</p>
+            <p className={styles.acceptedPopupText}>Your submission was accepted.</p>
           </div>
         </div>
       ) : null}
 
-      {showAcceptedPopup ? (
-        <div className={styles.acceptedWrap}>
-          <div className={styles.acceptedNotice}>Your submission was accepted.</div>
+      {isGapPhase && competition?.nextQuestionAt ? (
+        <div className={styles.waitingPopupWrap}>
+          <div className={styles.waitingPopup}>
+            <p className={styles.waitingPopupLabel}>Waiting Time</p>
+            <p className={styles.waitingPopupValue}>{formatClock(competition.nextQuestionAt, now)}</p>
+            <p className={styles.waitingPopupText}>Question time ended. Next question starts soon.</p>
+          </div>
         </div>
       ) : null}
 
