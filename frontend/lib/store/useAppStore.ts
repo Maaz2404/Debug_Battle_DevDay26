@@ -12,6 +12,21 @@ import type {
   UserSession,
 } from "@/lib/types";
 
+const supportedLanguages: Language[] = ["javascript", "python", "cpp"];
+
+function getPreferredQuestionLanguage(question: Question | null, preferredLanguage: Language) {
+  if (!question) {
+    return preferredLanguage;
+  }
+
+  const availableLanguages = supportedLanguages.filter((option) => Boolean(question.starterCode[option]?.trim()));
+  if (availableLanguages.length === 0) {
+    return preferredLanguage;
+  }
+
+  return availableLanguages.includes(preferredLanguage) ? preferredLanguage : availableLanguages[0];
+}
+
 interface AppState {
   user: UserSession | null;
   competition: CompetitionState | null;
@@ -131,10 +146,12 @@ export const useAppStore = create<AppState>()(
       setCountdownValue: (countdownValue) => set({ countdownValue }),
       setThirtySecondWarning: (showThirtySecondWarning) => set({ showThirtySecondWarning }),
       resetQuestionState: (question) => {
-        const language = get().language;
+        const currentLanguage = get().language;
+        const language = getPreferredQuestionLanguage(question, currentLanguage);
         const defaultCode = question?.starterCode[language] ?? "";
         set({
           currentQuestion: question,
+          language,
           codeDraft: defaultCode,
           runResult: null,
           submissionResult: null,

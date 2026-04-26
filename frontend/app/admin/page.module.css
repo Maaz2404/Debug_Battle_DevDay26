@@ -125,6 +125,17 @@
   gap: 0.75rem;
 }
 
+.questionActions {
+  margin-top: 1.5rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.questionActions .start,
+.questionActions .reset {
+  width: 100%;
+}
+
 .actionControl {
   display: grid;
   gap: 0.35rem;
@@ -290,6 +301,7 @@
 
 .start:disabled {
   opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .pause {
@@ -309,6 +321,7 @@
 
 .pause:disabled {
   opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .reset {
@@ -328,6 +341,7 @@
 
 .reset:disabled {
   opacity: 0.6;
+  cursor: not-allowed;
 }
 
 @media (min-width: 1024px) {

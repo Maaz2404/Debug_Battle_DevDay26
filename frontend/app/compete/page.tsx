@@ -19,7 +19,12 @@ import { useAppStore } from "@/lib/store/useAppStore";
 import type { Language } from "@/lib/types";
 import styles from "./page.module.css";
 
-const languageOptions: Language[] = ["javascript", "python", "cpp"];
+const supportedLanguages: Language[] = ["javascript", "python", "cpp"];
+
+function getAvailableLanguages(starterCode: Record<Language, string> | null | undefined) {
+  const available = supportedLanguages.filter((option) => Boolean(starterCode?.[option]?.trim()));
+  return available.length > 0 ? available : supportedLanguages;
+}
 
 function formatClock(endsAt: number | null, now: number) {
   if (!endsAt) {
@@ -109,6 +114,17 @@ export default function CompetePage() {
     setPendingSubmitSubmissionId,
     setThirtySecondWarning,
   } = useAppStore((state) => state);
+  const availableLanguages = useMemo(() => getAvailableLanguages(currentQuestion?.starterCode), [currentQuestion?.starterCode]);
+
+  useEffect(() => {
+    if (availableLanguages.length === 0) {
+      return;
+    }
+
+    if (!availableLanguages.includes(language)) {
+      setLanguage(availableLanguages[0]);
+    }
+  }, [availableLanguages, language, setLanguage]);
 
   useEffect(() => {
     if (competition?.status !== "ACTIVE") {
@@ -408,7 +424,7 @@ export default function CompetePage() {
                 onChange={(event) => setLanguage(event.target.value as Language)}
                 className={styles.select}
               >
-                {languageOptions.map((option) => (
+                {availableLanguages.map((option) => (
                   <option key={option} value={option}>
                     {option.toUpperCase()}
                   </option>
