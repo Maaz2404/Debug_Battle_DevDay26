@@ -1,6 +1,7 @@
 "use client";
 
 import clsx from "clsx";
+import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { ConnectionStatusBadge } from "@/components/ConnectionStatusBadge";
@@ -13,10 +14,11 @@ import {
 } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/http";
 import { useAppStore } from "@/lib/store/useAppStore";
-import type { RoundStatus } from "@/lib/types";
+import type { Language, RoundStatus } from "@/lib/types";
 import styles from "./page.module.css";
 
 const navItems = ["Overview", "Round 1", "Round 2", "Round 3", "Teams", "Questions"];
+const supportedLanguages: Language[] = ["javascript", "python", "cpp"];
 
 type TeamDraft = {
   name: string;
@@ -27,12 +29,77 @@ type QuestionDraft = {
   position: number;
   title: string;
   description: string;
-  code: string;
-  language: string;
+  language: Language;
+  codeJavascript: string;
+  codePython: string;
+  codeCpp: string;
   time_limit_seconds: number;
   base_score: number;
   testCaseText: string;
 };
+
+function extractCodeBlock(description: string, labels: string[]) {
+  for (const label of labels) {
+    const pattern = new RegExp("```(?:" + label + ")\\s*([\\s\\S]*?)```", "i");
+    const match = description.match(pattern);
+    if (match?.[1]) {
+      return match[1].trim();
+    }
+  }
+  return "";
+}
+
+function stripStarterCodeBlocks(description: string) {
+  const pattern = /```(?:javascript|js|python|py|cpp|c\+\+)\s*[\s\S]*?```/gi;
+  return description
+    .replace(pattern, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function getCodeByLanguage(draft: Pick<QuestionDraft, "language" | "codeJavascript" | "codePython" | "codeCpp">) {
+  if (draft.language === "python") {
+    return draft.codePython;
+  }
+  if (draft.language === "cpp") {
+    return draft.codeCpp;
+  }
+  return draft.codeJavascript;
+}
+
+function setCodeByLanguage(draft: QuestionDraft, code: string): QuestionDraft {
+  if (draft.language === "python") {
+    return { ...draft, codePython: code };
+  }
+  if (draft.language === "cpp") {
+    return { ...draft, codeCpp: code };
+  }
+  return { ...draft, codeJavascript: code };
+}
+
+function buildDescriptionWithStarterCode(
+  description: string,
+  codes: { javascript: string; python: string; cpp: string },
+) {
+  const base = stripStarterCodeBlocks(description);
+  const blocks: string[] = [];
+
+  if (codes.javascript.trim()) {
+    blocks.push(["```javascript", codes.javascript.trimEnd(), "```"].join("\n"));
+  }
+  if (codes.python.trim()) {
+    blocks.push(["```python", codes.python.trimEnd(), "```"].join("\n"));
+  }
+  if (codes.cpp.trim()) {
+    blocks.push(["```cpp", codes.cpp.trimEnd(), "```"].join("\n"));
+  }
+
+  if (blocks.length === 0) {
+    return base;
+  }
+
+  return [base, "Starter code:", ...blocks].filter(Boolean).join("\n\n");
+}
 
 function parseRoundFromNav(value: string) {
   const match = value.match(/^Round\s+(\d+)$/);
@@ -66,6 +133,7 @@ function stringifyTestCases(testCases: Array<{ input: string; expected_output: s
 }
 
 export default function AdminPage() {
+  const router = useRouter();
   const [activeNav, setActiveNav] = useState(navItems[0]);
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -99,8 +167,10 @@ export default function AdminPage() {
     position: 0,
     title: "",
     description: "",
-    code: "",
-    language: "cpp",
+    language: "javascript",
+    codeJavascript: "",
+    codePython: "",
+    codeCpp: "",
     time_limit_seconds: 150,
     base_score: 100,
     testCaseText: "sample input => sample output",
@@ -110,6 +180,7 @@ export default function AdminPage() {
   const connectionStatus = useAppStore((state) => state.connectionStatus);
   const setCompetition = useAppStore((state) => state.setCompetition);
   const resetQuestionState = useAppStore((state) => state.resetQuestionState);
+  const clearSession = useAppStore((state) => state.clearSession);
   const setUser = useAppStore((state) => state.setUser);
   const user = useAppStore((state) => state.user);
   const isAdmin = Boolean(user?.isAdmin);
@@ -161,12 +232,23 @@ export default function AdminPage() {
   const canEnd = isAdmin && !busy && (selectedRoundStatus === "ACTIVE" || selectedRoundStatus === "PAUSED") && competition?.round === selectedRoundNumber && selectedRoundRemainingSeconds > 0;
   const canReset = isAdmin && !busy && selectedRoundStatus === "ENDED";
 
+  const canStartOrEnd = canStart || canEnd;
+  const canPauseOrResume = canPause || canResume;
+
   const getAdminActionErrorMessage = (error: unknown, fallback: string) => {
     if (error instanceof ApiError) {
       if (error.status === 403) return "Admin privileges are required for this action.";
       if (error.status === 409) return error.message;
     }
     return error instanceof Error ? error.message : fallback;
+  };
+
+  const handleAdminUnauthorized = () => {
+    clearSession();
+    setActionError(null);
+    setTeamsError(null);
+    setQuestionsError(null);
+    router.replace("/admin");
   };
 
   const startDisabledReason = !canStart
@@ -225,6 +307,18 @@ export default function AdminPage() {
         : "Reset is available only when selected round status is ENDED.")
     : null;
 
+  const startOrEndDisabledReason = canStart
+    ? startDisabledReason
+    : canEnd
+      ? endDisabledReason
+      : startDisabledReason ?? endDisabledReason;
+
+  const pauseOrResumeDisabledReason = canPause
+    ? pauseDisabledReason
+    : canResume
+      ? resumeDisabledReason
+      : pauseDisabledReason ?? resumeDisabledReason;
+
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
@@ -242,8 +336,17 @@ export default function AdminPage() {
             setRoundPanels(rounds);
           }
         })
-        .catch(() => {
-          if (!disposed) setActionError("Failed to refresh round state from server.");
+        .catch((error) => {
+          if (disposed) {
+            return;
+          }
+
+          if (error instanceof ApiError && error.status === 401) {
+            handleAdminUnauthorized();
+            return;
+          }
+
+          setActionError("Failed to refresh round state from server.");
         });
     };
 
@@ -276,13 +379,26 @@ export default function AdminPage() {
             round_number: Number(row.round_number || 1),
             position: Number(row.position || 0),
             title: row.title || "",
-            description: row.description || "",
-            code: row.code || "",
-            language: row.language || "cpp",
+            description: stripStarterCodeBlocks(row.description || ""),
+            language: ((row.language || "javascript") as Language),
+            codeJavascript: extractCodeBlock(row.description || "", ["javascript", "js"]),
+            codePython: extractCodeBlock(row.description || "", ["python", "py"]),
+            codeCpp: extractCodeBlock(row.description || "", ["cpp", "c\\+\\+"]),
             time_limit_seconds: Number(row.time_limit_seconds || 150),
             base_score: Number(row.base_score || 100),
             testCaseText: stringifyTestCases(row.test_cases),
           };
+
+          const normalizedLanguage = (String(row.language || "javascript").toLowerCase() as Language);
+          if (normalizedLanguage === "javascript" && !next[row.id].codeJavascript) {
+            next[row.id].codeJavascript = row.code || "";
+          }
+          if (normalizedLanguage === "python" && !next[row.id].codePython) {
+            next[row.id].codePython = row.code || "";
+          }
+          if (normalizedLanguage === "cpp" && !next[row.id].codeCpp) {
+            next[row.id].codeCpp = row.code || "";
+          }
         }
       }
       return next;
@@ -290,30 +406,48 @@ export default function AdminPage() {
   };
 
   const loadTeams = async (token: string) => {
-    const items = await apiClient.getAdminTeams(token);
-    setTeams(items);
-    seedTeamDrafts(items);
-    setSelectedTeamId((previous) => {
-      if (previous && items.some((entry) => entry.id === previous)) {
-        return previous;
-      }
-      return items[0]?.id || "";
-    });
-  };
-
-  const loadQuestions = async (token: string, roundNumber?: number) => {
-    const items = await apiClient.getAdminQuestions(token, roundNumber);
-    setQuestions(items);
-    seedQuestionDrafts(items);
-    if (items.length > 0) {
-      setSelectedQuestionId((previous) => {
+    try {
+      const items = await apiClient.getAdminTeams(token);
+      setTeams(items);
+      seedTeamDrafts(items);
+      setSelectedTeamId((previous) => {
         if (previous && items.some((entry) => entry.id === previous)) {
           return previous;
         }
-        return items[0].id;
+        return items[0]?.id || "";
       });
-    } else {
-      setSelectedQuestionId(null);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        handleAdminUnauthorized();
+        return;
+      }
+
+      throw error;
+    }
+  };
+
+  const loadQuestions = async (token: string, roundNumber?: number) => {
+    try {
+      const items = await apiClient.getAdminQuestions(token, roundNumber);
+      setQuestions(items);
+      seedQuestionDrafts(items);
+      if (items.length > 0) {
+        setSelectedQuestionId((previous) => {
+          if (previous && items.some((entry) => entry.id === previous)) {
+            return previous;
+          }
+          return items[0].id;
+        });
+      } else {
+        setSelectedQuestionId(null);
+      }
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        handleAdminUnauthorized();
+        return;
+      }
+
+      throw error;
     }
   };
 
@@ -322,12 +456,20 @@ export default function AdminPage() {
 
     if (activeNav === "Teams") {
       loadTeams(user.token).catch((error) => {
+        if (error instanceof ApiError && error.status === 401) {
+          handleAdminUnauthorized();
+          return;
+        }
         setTeamsError(error instanceof Error ? error.message : "Failed to load teams.");
       });
     }
 
     if (activeNav === "Questions") {
       loadQuestions(user.token, questionFilterRound).catch((error) => {
+        if (error instanceof ApiError && error.status === 401) {
+          handleAdminUnauthorized();
+          return;
+        }
         setQuestionsError(error instanceof Error ? error.message : "Failed to load questions.");
       });
     }
@@ -389,6 +531,10 @@ export default function AdminPage() {
       await apiClient.startRound(user?.token ?? "mock-admin-token", selectedRoundNumber, startInSeconds);
       await refreshAdminRoundState();
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        handleAdminUnauthorized();
+        return;
+      }
       setActionError(getAdminActionErrorMessage(error, "Failed to start round."));
     } finally {
       setBusy(false);
@@ -403,6 +549,10 @@ export default function AdminPage() {
       await apiClient.pauseRound(user?.token ?? "", selectedRoundNumber);
       await refreshAdminRoundState();
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        handleAdminUnauthorized();
+        return;
+      }
       setActionError(getAdminActionErrorMessage(error, "Failed to pause round."));
     } finally {
       setBusy(false);
@@ -417,6 +567,10 @@ export default function AdminPage() {
       await apiClient.resumeRound(user?.token ?? "", selectedRoundNumber);
       await refreshAdminRoundState();
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        handleAdminUnauthorized();
+        return;
+      }
       setActionError(getAdminActionErrorMessage(error, "Failed to resume round."));
     } finally {
       setBusy(false);
@@ -431,9 +585,35 @@ export default function AdminPage() {
       await apiClient.endRound(user?.token ?? "", selectedRoundNumber);
       await refreshAdminRoundState();
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        handleAdminUnauthorized();
+        return;
+      }
       setActionError(getAdminActionErrorMessage(error, "Failed to end round."));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const startOrEndRound = async () => {
+    if (canStart) {
+      await startRound();
+      return;
+    }
+
+    if (canEnd) {
+      await endRound();
+    }
+  };
+
+  const pauseOrResumeRound = async () => {
+    if (canPause) {
+      await pauseRound();
+      return;
+    }
+
+    if (canResume) {
+      await resumeRound();
     }
   };
 
@@ -445,6 +625,10 @@ export default function AdminPage() {
       await apiClient.resetRound(user?.token ?? "", selectedRoundNumber);
       await refreshAdminRoundState();
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        handleAdminUnauthorized();
+        return;
+      }
       setActionError(getAdminActionErrorMessage(error, "Failed to reset round."));
     } finally {
       setBusy(false);
@@ -462,6 +646,10 @@ export default function AdminPage() {
       setTeamPassword("");
       await loadTeams(user.token);
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        handleAdminUnauthorized();
+        return;
+      }
       setTeamsError(error instanceof Error ? error.message : "Failed to create team.");
     } finally {
       setBusy(false);
@@ -482,6 +670,10 @@ export default function AdminPage() {
       await apiClient.updateAdminTeam(user.token, teamId, payload);
       await loadTeams(user.token);
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        handleAdminUnauthorized();
+        return;
+      }
       setTeamsError(error instanceof Error ? error.message : "Failed to update team.");
     } finally {
       setBusy(false);
@@ -497,6 +689,10 @@ export default function AdminPage() {
       await apiClient.deleteAdminTeam(user.token, teamId);
       await loadTeams(user.token);
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        handleAdminUnauthorized();
+        return;
+      }
       setTeamsError(error instanceof Error ? error.message : "Failed to delete team.");
     } finally {
       setBusy(false);
@@ -519,6 +715,10 @@ export default function AdminPage() {
       setDefaultTeamPassword("");
       await loadTeams(user.token);
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        handleAdminUnauthorized();
+        return;
+      }
       setTeamsError(error instanceof Error ? error.message : "Failed to reset all team passwords.");
     } finally {
       setBusy(false);
@@ -527,6 +727,12 @@ export default function AdminPage() {
 
   const createQuestion = async () => {
     if (!user?.token) return;
+    const selectedLanguageCode = getCodeByLanguage(newQuestionDraft).trim();
+    if (!selectedLanguageCode) {
+      setQuestionsError(`Code is required for ${newQuestionDraft.language.toUpperCase()}.`);
+      return;
+    }
+
     setBusy(true);
     setQuestionsError(null);
     try {
@@ -534,8 +740,12 @@ export default function AdminPage() {
         round_number: newQuestionDraft.round_number,
         position: newQuestionDraft.position,
         title: newQuestionDraft.title,
-        description: newQuestionDraft.description,
-        code: newQuestionDraft.code,
+        description: buildDescriptionWithStarterCode(newQuestionDraft.description, {
+          javascript: newQuestionDraft.codeJavascript,
+          python: newQuestionDraft.codePython,
+          cpp: newQuestionDraft.codeCpp,
+        }),
+        code: selectedLanguageCode,
         language: newQuestionDraft.language,
         time_limit_seconds: newQuestionDraft.time_limit_seconds,
         base_score: newQuestionDraft.base_score,
@@ -546,8 +756,10 @@ export default function AdminPage() {
         position: 0,
         title: "",
         description: "",
-        code: "",
-        language: "cpp",
+        language: "javascript",
+        codeJavascript: "",
+        codePython: "",
+        codeCpp: "",
         time_limit_seconds: 150,
         base_score: 100,
         testCaseText: "sample input => sample output",
@@ -555,6 +767,10 @@ export default function AdminPage() {
       setShowCreateQuestion(false);
       await loadQuestions(user.token, questionFilterRound);
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        handleAdminUnauthorized();
+        return;
+      }
       setQuestionsError(error instanceof Error ? error.message : "Failed to create question.");
     } finally {
       setBusy(false);
@@ -563,6 +779,12 @@ export default function AdminPage() {
 
   const updateQuestion = async () => {
     if (!user?.token || !selectedQuestionId || !selectedQuestionDraft) return;
+    const selectedLanguageCode = getCodeByLanguage(selectedQuestionDraft).trim();
+    if (!selectedLanguageCode) {
+      setQuestionsError(`Code is required for ${selectedQuestionDraft.language.toUpperCase()}.`);
+      return;
+    }
+
     setBusy(true);
     setQuestionsError(null);
     try {
@@ -570,8 +792,12 @@ export default function AdminPage() {
         round_number: selectedQuestionDraft.round_number,
         position: selectedQuestionDraft.position,
         title: selectedQuestionDraft.title,
-        description: selectedQuestionDraft.description,
-        code: selectedQuestionDraft.code,
+        description: buildDescriptionWithStarterCode(selectedQuestionDraft.description, {
+          javascript: selectedQuestionDraft.codeJavascript,
+          python: selectedQuestionDraft.codePython,
+          cpp: selectedQuestionDraft.codeCpp,
+        }),
+        code: selectedLanguageCode,
         language: selectedQuestionDraft.language,
         time_limit_seconds: selectedQuestionDraft.time_limit_seconds,
         base_score: selectedQuestionDraft.base_score,
@@ -579,6 +805,10 @@ export default function AdminPage() {
       });
       await loadQuestions(user.token, questionFilterRound);
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        handleAdminUnauthorized();
+        return;
+      }
       setQuestionsError(error instanceof Error ? error.message : "Failed to update question.");
     } finally {
       setBusy(false);
@@ -600,6 +830,10 @@ export default function AdminPage() {
       });
       await loadQuestions(user.token, questionFilterRound);
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        handleAdminUnauthorized();
+        return;
+      }
       setQuestionsError(error instanceof Error ? error.message : "Failed to delete question.");
     } finally {
       setBusy(false);
@@ -676,20 +910,16 @@ export default function AdminPage() {
 
                 <div className={styles.actions}>
                   <div className={styles.actionControl}>
-                    <button onClick={startRound} disabled={!canStart} title={startDisabledReason ?? undefined} className={styles.start}>{busy ? "Starting..." : "Start Round"}</button>
-                    {startDisabledReason ? <p className={styles.actionHint}>{startDisabledReason}</p> : null}
+                    <button onClick={startOrEndRound} disabled={!canStartOrEnd} title={startOrEndDisabledReason ?? undefined} className={styles.start}>
+                      {busy ? (canStart ? "Starting..." : canEnd ? "Ending..." : "Working...") : (canStart ? "Start Round" : "End Round")}
+                    </button>
+                    {startOrEndDisabledReason ? <p className={styles.actionHint}>{startOrEndDisabledReason}</p> : null}
                   </div>
                   <div className={styles.actionControl}>
-                    <button onClick={pauseRound} disabled={!canPause} title={pauseDisabledReason ?? undefined} className={styles.pause}>Pause</button>
-                    {pauseDisabledReason ? <p className={styles.actionHint}>{pauseDisabledReason}</p> : null}
-                  </div>
-                  <div className={styles.actionControl}>
-                    <button onClick={resumeRound} disabled={!canResume} title={resumeDisabledReason ?? undefined} className={styles.start}>Resume</button>
-                    {resumeDisabledReason ? <p className={styles.actionHint}>{resumeDisabledReason}</p> : null}
-                  </div>
-                  <div className={styles.actionControl}>
-                    <button onClick={endRound} disabled={!canEnd} title={endDisabledReason ?? undefined} className={styles.pause}>End Round</button>
-                    {endDisabledReason ? <p className={styles.actionHint}>{endDisabledReason}</p> : null}
+                    <button onClick={pauseOrResumeRound} disabled={!canPauseOrResume} title={pauseOrResumeDisabledReason ?? undefined} className={styles.pause}>
+                      {busy ? (canPause ? "Pausing..." : canResume ? "Resuming..." : "Working...") : (canPause ? "Pause" : "Resume")}
+                    </button>
+                    {pauseOrResumeDisabledReason ? <p className={styles.actionHint}>{pauseOrResumeDisabledReason}</p> : null}
                   </div>
                   <div className={styles.actionControl}>
                     <button onClick={resetRound} disabled={!canReset} title={resetDisabledReason ?? undefined} className={styles.reset}>Reset Round</button>
@@ -832,7 +1062,13 @@ export default function AdminPage() {
                       </div>
                       <div className={styles.fieldGroup}>
                         <label className={styles.fieldLabel}>Language</label>
-                        <input className={styles.fieldInput} value={newQuestionDraft.language} onChange={(event) => setNewQuestionDraft((previous) => ({ ...previous, language: event.target.value }))} />
+                        <select className={styles.fieldInput} value={newQuestionDraft.language} onChange={(event) => setNewQuestionDraft((previous) => ({ ...previous, language: event.target.value as Language }))}>
+                          {supportedLanguages.map((option) => (
+                            <option key={option} value={option}>
+                              {option.toUpperCase()}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div className={styles.fieldGroup}>
                         <label className={styles.fieldLabel}>Time Limit</label>
@@ -852,8 +1088,13 @@ export default function AdminPage() {
                       <textarea className={styles.textArea} value={newQuestionDraft.description} placeholder="Description" onChange={(event) => setNewQuestionDraft((previous) => ({ ...previous, description: event.target.value }))} />
                     </div>
                     <div className={styles.fieldGroup}>
-                      <label className={styles.fieldLabel}>Code</label>
-                      <textarea className={styles.textArea} value={newQuestionDraft.code} placeholder="Starter code" onChange={(event) => setNewQuestionDraft((previous) => ({ ...previous, code: event.target.value }))} />
+                      <label className={styles.fieldLabel}>Code ({newQuestionDraft.language.toUpperCase()})</label>
+                      <textarea
+                        className={styles.textArea}
+                        value={getCodeByLanguage(newQuestionDraft)}
+                        placeholder={`${newQuestionDraft.language.toUpperCase()} starter code`}
+                        onChange={(event) => setNewQuestionDraft((previous) => setCodeByLanguage(previous, event.target.value))}
+                      />
                     </div>
                     <div className={styles.fieldGroup}>
                       <label className={styles.fieldLabel}>Test Cases</label>
@@ -868,18 +1109,6 @@ export default function AdminPage() {
                 <div className={styles.questionWorkspace}>
                   <div className={styles.questionEditor}>
                     <div className={styles.fieldRow}>
-                      <div className={styles.fieldGroup}>
-                        <label className={styles.fieldLabel}>Round</label>
-                        <select
-                          className={styles.fieldInput}
-                          value={questionFilterRound}
-                          onChange={(event) => setQuestionFilterRound(Number(event.target.value) || 1)}
-                        >
-                          <option value={1}>Round 1</option>
-                          <option value={2}>Round 2</option>
-                          <option value={3}>Round 3</option>
-                        </select>
-                      </div>
                       <div className={styles.fieldGroup}>
                         <label className={styles.fieldLabel}>Question</label>
                         <select
@@ -913,7 +1142,13 @@ export default function AdminPage() {
                           </div>
                           <div className={styles.fieldGroup}>
                             <label className={styles.fieldLabel}>Language</label>
-                            <input className={styles.fieldInput} value={selectedQuestionDraft.language} onChange={(event) => setQuestionDrafts((previous) => ({ ...previous, [selectedQuestionId]: { ...selectedQuestionDraft, language: event.target.value } }))} />
+                            <select className={styles.fieldInput} value={selectedQuestionDraft.language} onChange={(event) => setQuestionDrafts((previous) => ({ ...previous, [selectedQuestionId]: { ...selectedQuestionDraft, language: event.target.value as Language } }))}>
+                              {supportedLanguages.map((option) => (
+                                <option key={option} value={option}>
+                                  {option.toUpperCase()}
+                                </option>
+                              ))}
+                            </select>
                           </div>
                           <div className={styles.fieldGroup}>
                             <label className={styles.fieldLabel}>Time Limit</label>
@@ -933,14 +1168,22 @@ export default function AdminPage() {
                           <textarea className={styles.textArea} value={selectedQuestionDraft.description} onChange={(event) => setQuestionDrafts((previous) => ({ ...previous, [selectedQuestionId]: { ...selectedQuestionDraft, description: event.target.value } }))} />
                         </div>
                         <div className={styles.fieldGroup}>
-                          <label className={styles.fieldLabel}>Code</label>
-                          <textarea className={styles.textArea} value={selectedQuestionDraft.code} onChange={(event) => setQuestionDrafts((previous) => ({ ...previous, [selectedQuestionId]: { ...selectedQuestionDraft, code: event.target.value } }))} />
+                          <label className={styles.fieldLabel}>Code ({selectedQuestionDraft.language.toUpperCase()})</label>
+                          <textarea
+                            className={styles.textArea}
+                            value={getCodeByLanguage(selectedQuestionDraft)}
+                            placeholder={`${selectedQuestionDraft.language.toUpperCase()} starter code`}
+                            onChange={(event) => setQuestionDrafts((previous) => ({
+                              ...previous,
+                              [selectedQuestionId]: setCodeByLanguage(selectedQuestionDraft, event.target.value),
+                            }))}
+                          />
                         </div>
                         <div className={styles.fieldGroup}>
                           <label className={styles.fieldLabel}>Test Cases</label>
                           <textarea className={styles.textArea} value={selectedQuestionDraft.testCaseText} onChange={(event) => setQuestionDrafts((previous) => ({ ...previous, [selectedQuestionId]: { ...selectedQuestionDraft, testCaseText: event.target.value } }))} />
                         </div>
-                        <div className={styles.actions}>
+                        <div className={styles.questionActions}>
                           <button className={styles.start} type="button" disabled={busy} onClick={updateQuestion}>Update</button>
                           <button className={styles.reset} type="button" disabled={busy} onClick={deleteQuestion}>Delete</button>
                         </div>

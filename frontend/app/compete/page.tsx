@@ -19,7 +19,12 @@ import { useAppStore } from "@/lib/store/useAppStore";
 import type { Language } from "@/lib/types";
 import styles from "./page.module.css";
 
-const languageOptions: Language[] = ["javascript", "python", "cpp"];
+const supportedLanguages: Language[] = ["javascript", "python", "cpp"];
+
+function getAvailableLanguages(starterCode: Record<Language, string> | null | undefined) {
+  const available = supportedLanguages.filter((option) => Boolean(starterCode?.[option]?.trim()));
+  return available.length > 0 ? available : supportedLanguages;
+}
 
 function formatClock(endsAt: number | null, now: number) {
   if (!endsAt) {
@@ -109,6 +114,17 @@ export default function CompetePage() {
     setPendingSubmitSubmissionId,
     setThirtySecondWarning,
   } = useAppStore((state) => state);
+  const availableLanguages = useMemo(() => getAvailableLanguages(currentQuestion?.starterCode), [currentQuestion?.starterCode]);
+
+  useEffect(() => {
+    if (availableLanguages.length === 0) {
+      return;
+    }
+
+    if (!availableLanguages.includes(language)) {
+      setLanguage(availableLanguages[0]);
+    }
+  }, [availableLanguages, language, setLanguage]);
 
   useEffect(() => {
     if (competition?.status !== "ACTIVE") {
@@ -370,17 +386,22 @@ export default function CompetePage() {
         </div>
       ) : null}
 
-      {isGapPhase && competition?.nextQuestionAt ? (
-        <div className={styles.gapWrap}>
-          <div className={styles.gapNotice}>
-            Question time ended. Next question starts in <span className={styles.gapValue}>{formatClock(competition.nextQuestionAt, now)}</span>
+      {showAcceptedPopup ? (
+        <div className={styles.acceptedPopupWrap}>
+          <div className={styles.acceptedPopup}>
+            <p className={styles.acceptedPopupLabel}>Submission Accepted</p>
+            <p className={styles.acceptedPopupText}>Your submission was accepted.</p>
           </div>
         </div>
       ) : null}
 
-      {showAcceptedPopup ? (
-        <div className={styles.acceptedWrap}>
-          <div className={styles.acceptedNotice}>Your submission was accepted.</div>
+      {isGapPhase && competition?.nextQuestionAt ? (
+        <div className={styles.waitingPopupWrap}>
+          <div className={styles.waitingPopup}>
+            <p className={styles.waitingPopupLabel}>Waiting Time</p>
+            <p className={styles.waitingPopupValue}>{formatClock(competition.nextQuestionAt, now)}</p>
+            <p className={styles.waitingPopupText}>Question time ended. Next question starts soon.</p>
+          </div>
         </div>
       ) : null}
 
@@ -403,7 +424,7 @@ export default function CompetePage() {
                 onChange={(event) => setLanguage(event.target.value as Language)}
                 className={styles.select}
               >
-                {languageOptions.map((option) => (
+                {availableLanguages.map((option) => (
                   <option key={option} value={option}>
                     {option.toUpperCase()}
                   </option>
