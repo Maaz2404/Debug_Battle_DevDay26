@@ -30,7 +30,7 @@ async function getQuestionById(questionId) {
     return null;
   }
 
-  const { data, error } = await supabaseAdmin
+  const { data: base, error } = await supabaseAdmin
     .from('questions')
     .select('id, round_id, position, title, description, code, language, time_limit_seconds, test_cases')
     .eq('id', questionId)
@@ -40,7 +40,69 @@ async function getQuestionById(questionId) {
     throw new Error(`Failed to load active question: ${error.message}`);
   }
 
-  return data || null;
+  if (!base) {
+    return null;
+  }
+
+  const { data: rows, error: rowsError } = await supabaseAdmin
+    .from('questions')
+    .select('id, round_id, position, title, description, code, language, time_limit_seconds, test_cases')
+    .eq('round_id', base.round_id)
+    .eq('position', base.position);
+
+  if (rowsError || !rows || rows.length === 0) {
+    return base;
+  }
+
+  const codes = { javascript: '', python: '', cpp: '' };
+  let canonical = rows[0];
+  for (const row of rows) {
+    const lang = String(row.language || '').toLowerCase();
+    if (lang === 'javascript') {
+      canonical = row;
+      codes.javascript = row.code || '';
+    } else if (lang === 'python') {
+      codes.python = row.code || '';
+    } else if (lang === 'cpp') {
+      codes.cpp = row.code || '';
+    }
+  }
+
+  const baseDescription = String(canonical.description || '')
+    .replace(/```(?:javascript|js|python|py|cpp|c\+\+)\s*[\s\S]*?```/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const blocks = [];
+  if (codes.javascript.trim()) {
+    blocks.push(["```javascript", codes.javascript.trimEnd(), "```"].join("\n"));
+  }
+  if (codes.python.trim()) {
+    blocks.push(["```python", codes.python.trimEnd(), "```"].join("\n"));
+  }
+  if (codes.cpp.trim()) {
+    blocks.push(["```cpp", codes.cpp.trimEnd(), "```"].join("\n"));
+  }
+  const description = blocks.length > 0
+    ? [baseDescription, 'Starter code:', ...blocks].filter(Boolean).join("\n\n")
+    : baseDescription;
+
+  const canonicalLang = String(canonical.language || 'javascript').toLowerCase();
+  const code = canonicalLang === 'python'
+    ? codes.python
+    : canonicalLang === 'cpp'
+      ? codes.cpp
+      : codes.javascript;
+
+  return {
+    ...canonical,
+    description,
+    code,
+    language: canonicalLang || 'javascript',
+    starter_code: codes,
+    starter_code_javascript: codes.javascript,
+    starter_code_python: codes.python,
+    starter_code_cpp: codes.cpp,
+  };
 }
 
 async function getRoundQuestionCatalog() {
@@ -55,7 +117,7 @@ async function getRoundQuestionCatalog() {
 
   const { data: questions, error: questionsError } = await supabaseAdmin
     .from('questions')
-    .select('id, round_id, position')
+    .select('id, round_id, position, language')
     .order('position', { ascending: true });
 
   if (questionsError) {
@@ -70,20 +132,45 @@ async function getRoundQuestionCatalog() {
     }
 
     if (!questionsByRoundId.has(key)) {
-      questionsByRoundId.set(key, []);
+      questionsByRoundId.set(key, new Map());
     }
-    questionsByRoundId.get(key).push({
+
+    const position = Number(row.position || 0);
+    const perRoundMap = questionsByRoundId.get(key);
+    if (!perRoundMap.has(position)) {
+      perRoundMap.set(position, []);
+    }
+
+    perRoundMap.get(position).push({
       id: row.id,
-      position: Number(row.position || 0),
+      position,
+      language: row.language,
     });
   }
 
-  return (rounds || []).map((round) => ({
-    id: round.id,
-    round_number: Number(round.round_number || 0),
-    questions: (questionsByRoundId.get(String(round.id)) || [])
-      .sort((a, b) => a.position - b.position),
-  }));
+  return (rounds || []).map((round) => {
+    const perRound = questionsByRoundId.get(String(round.id)) || new Map();
+    const questionsForRound = [];
+
+    for (const rows of perRound.values()) {
+      const canonical = rows.find((row) => String(row.language || '').toLowerCase() === 'javascript')
+        || rows[0];
+      if (canonical?.id) {
+        questionsForRound.push({
+          id: canonical.id,
+          position: Number(canonical.position || 0),
+        });
+      }
+    }
+
+    questionsForRound.sort((a, b) => a.position - b.position);
+
+    return {
+      id: round.id,
+      round_number: Number(round.round_number || 0),
+      questions: questionsForRound,
+    };
+  });
 }
 
 async function getAcceptedSubmissionScores(teamIds) {

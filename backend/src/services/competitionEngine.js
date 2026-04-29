@@ -52,6 +52,93 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function stripStarterCodeBlocks(description) {
+  const pattern = /```(?:javascript|js|python|py|cpp|c\+\+)\s*[\s\S]*?```/gi;
+  return String(description || '')
+    .replace(pattern, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function buildDescriptionWithStarterCode(description, codes) {
+  const base = stripStarterCodeBlocks(description || '');
+  const blocks = [];
+
+  if (codes.javascript?.trim()) {
+    blocks.push(["```javascript", codes.javascript.trimEnd(), "```"].join("\n"));
+  }
+  if (codes.python?.trim()) {
+    blocks.push(["```python", codes.python.trimEnd(), "```"].join("\n"));
+  }
+  if (codes.cpp?.trim()) {
+    blocks.push(["```cpp", codes.cpp.trimEnd(), "```"].join("\n"));
+  }
+
+  if (blocks.length === 0) {
+    return base;
+  }
+
+  return [base, 'Starter code:', ...blocks].filter(Boolean).join("\n\n");
+}
+
+function pickCanonicalRow(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return null;
+  }
+
+  const jsRow = rows.find((row) => String(row.language || '').toLowerCase() === 'javascript');
+  return jsRow || rows[0];
+}
+
+function mergeQuestionRows(rows) {
+  const canonical = pickCanonicalRow(rows);
+  if (!canonical) {
+    return null;
+  }
+
+  const codes = {
+    javascript: '',
+    python: '',
+    cpp: '',
+  };
+
+  for (const row of rows) {
+    const lang = String(row.language || '').toLowerCase();
+    if (lang === 'javascript') {
+      codes.javascript = row.code || '';
+    } else if (lang === 'python') {
+      codes.python = row.code || '';
+    } else if (lang === 'cpp') {
+      codes.cpp = row.code || '';
+    }
+  }
+
+  const description = buildDescriptionWithStarterCode(canonical.description || '', codes);
+  const canonicalLang = String(canonical.language || 'javascript').toLowerCase();
+  const code = canonicalLang === 'python'
+    ? codes.python
+    : canonicalLang === 'cpp'
+      ? codes.cpp
+      : codes.javascript;
+
+  return {
+    id: canonical.id,
+    round_id: canonical.round_id,
+    position: canonical.position,
+    title: canonical.title,
+    description,
+    code,
+    language: canonicalLang || 'javascript',
+    time_limit_seconds: canonical.time_limit_seconds,
+    base_score: canonical.base_score,
+    test_cases: canonical.test_cases,
+    starter_code: codes,
+    starter_code_javascript: codes.javascript,
+    starter_code_python: codes.python,
+    starter_code_cpp: codes.cpp,
+  };
+}
+
 function getQuestionDurationMs(state, index) {
   const seconds = Number(state?.questionDurations?.[index] || 180);
   return Math.max(0, seconds * 1000);
@@ -132,14 +219,31 @@ async function getRoundByNumber(roundNumber) {
 async function getRoundQuestionIds(roundId) {
   const { data, error } = await supabaseAdmin
     .from('questions')
-    .select('id')
+    .select('id, position, language')
     .eq('round_id', roundId);
 
   if (error) {
     throw new HttpError(500, 'Failed to read round question ids', error.message);
   }
 
-  return (data || []).map((row) => row.id);
+  const byPosition = new Map();
+  for (const row of data || []) {
+    const pos = Number(row.position || 0);
+    if (!byPosition.has(pos)) {
+      byPosition.set(pos, []);
+    }
+    byPosition.get(pos).push(row);
+  }
+
+  const ids = [];
+  for (const rows of byPosition.values()) {
+    const canonical = pickCanonicalRow(rows);
+    if (canonical?.id) {
+      ids.push(canonical.id);
+    }
+  }
+
+  return ids;
 }
 
 export async function listRounds() {
@@ -170,7 +274,49 @@ async function getRoundQuestions(roundId) {
     throw new HttpError(409, 'Cannot start round without questions');
   }
 
-  return data;
+  const byPosition = new Map();
+  for (const row of data || []) {
+    const pos = Number(row.position || 0);
+    if (!byPosition.has(pos)) {
+      byPosition.set(pos, []);
+    }
+    byPosition.get(pos).push(row);
+  }
+
+  const merged = [];
+  for (const rows of byPosition.values()) {
+    const mergedRow = mergeQuestionRows(rows);
+    if (mergedRow) {
+      merged.push(mergedRow);
+    }
+  }
+
+  merged.sort((a, b) => Number(a.position || 0) - Number(b.position || 0));
+  return merged;
+}
+
+async function getQuestionBundleById(questionId) {
+  const { data: base, error } = await supabaseAdmin
+    .from('questions')
+    .select('id, round_id, position, title, description, code, language, time_limit_seconds, base_score, test_cases')
+    .eq('id', questionId)
+    .maybeSingle();
+
+  if (error || !base) {
+    return null;
+  }
+
+  const { data: rows, error: rowsError } = await supabaseAdmin
+    .from('questions')
+    .select('id, round_id, position, title, description, code, language, time_limit_seconds, base_score, test_cases')
+    .eq('round_id', base.round_id)
+    .eq('position', base.position);
+
+  if (rowsError) {
+    return base;
+  }
+
+  return mergeQuestionRows(rows) || base;
 }
 
 async function updateRoundStatus(roundId, fields) {
@@ -432,18 +578,14 @@ async function persistRoundLiveKeys(state) {
 async function emitQuestionNext(state) {
   const now = Date.now();
   const questionId = state.questionIds[state.currentQuestionIndex];
-  const { data, error } = await supabaseAdmin
-    .from('questions')
-    .select('id, round_id, position, title, description, code, language, time_limit_seconds, base_score, test_cases')
-    .eq('id', questionId)
-    .maybeSingle();
+  const data = await getQuestionBundleById(questionId);
 
-  if (error || !data) {
+  if (!data) {
     console.error('[competition-engine] failed to load question for emit', {
       roundId: state.roundId,
       index: state.currentQuestionIndex,
       questionId,
-      error: error?.message || 'not-found',
+      error: 'not-found',
     });
     return;
   }
@@ -481,11 +623,7 @@ async function emitQuestionGap(state) {
 async function emitRoundStart(state) {
   const now = Date.now();
   const questionId = state.questionIds[0];
-  const { data: question } = await supabaseAdmin
-    .from('questions')
-    .select('id, round_id, position, title, description, code, language, time_limit_seconds, base_score, test_cases')
-    .eq('id', questionId)
-    .maybeSingle();
+  const question = await getQuestionBundleById(questionId);
 
   emitToRoom(getCompetitionRoom(), 'round:start', {
     round_id: state.roundId,

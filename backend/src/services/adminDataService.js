@@ -27,6 +27,82 @@ function assertPasswordPolicy(password) {
   }
 }
 
+function stripStarterCodeBlocks(description) {
+  const pattern = /```(?:javascript|js|python|py|cpp|c\+\+)\s*[\s\S]*?```/gi;
+  return String(description || '')
+    .replace(pattern, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function buildDescriptionWithStarterCode(description, codes) {
+  const base = stripStarterCodeBlocks(description || '');
+  const blocks = [];
+
+  if (codes.javascript?.trim()) {
+    blocks.push(["```javascript", codes.javascript.trimEnd(), "```"].join("\n"));
+  }
+  if (codes.python?.trim()) {
+    blocks.push(["```python", codes.python.trimEnd(), "```"].join("\n"));
+  }
+  if (codes.cpp?.trim()) {
+    blocks.push(["```cpp", codes.cpp.trimEnd(), "```"].join("\n"));
+  }
+
+  if (blocks.length === 0) {
+    return base;
+  }
+
+  return [base, 'Starter code:', ...blocks].filter(Boolean).join("\n\n");
+}
+
+function pickCanonicalRow(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return null;
+  }
+
+  const jsRow = rows.find((row) => String(row.language || '').toLowerCase() === 'javascript');
+  return jsRow || rows[0];
+}
+
+function mergeQuestionRows(rows) {
+  const canonical = pickCanonicalRow(rows);
+  if (!canonical) {
+    return null;
+  }
+
+  const codes = {
+    javascript: '',
+    python: '',
+    cpp: '',
+  };
+
+  for (const row of rows) {
+    const lang = String(row.language || '').toLowerCase();
+    if (lang === 'javascript') {
+      codes.javascript = row.code || '';
+    } else if (lang === 'python') {
+      codes.python = row.code || '';
+    } else if (lang === 'cpp') {
+      codes.cpp = row.code || '';
+    }
+  }
+
+  const canonicalLang = String(canonical.language || 'javascript').toLowerCase();
+  const code = canonicalLang === 'python'
+    ? codes.python
+    : canonicalLang === 'cpp'
+      ? codes.cpp
+      : codes.javascript;
+
+  return {
+    ...canonical,
+    description: buildDescriptionWithStarterCode(canonical.description || '', codes),
+    code,
+    language: canonicalLang || 'javascript',
+  };
+}
+
 function normalizeQuestionTestCases(testCases) {
   if (!Array.isArray(testCases)) {
     throw new HttpError(400, 'test_cases must be an array');
@@ -343,10 +419,34 @@ export async function listQuestions(roundNumber) {
     throw new HttpError(500, 'Failed to read questions', error.message);
   }
 
-  return (data || []).map((row) => ({
-    ...row,
-    round_number: roundIdToNumber.get(String(row.round_id)) || null,
-  }));
+  const byRoundPosition = new Map();
+  for (const row of data || []) {
+    const key = `${row.round_id || ''}:${Number(row.position || 0)}`;
+    if (!byRoundPosition.has(key)) {
+      byRoundPosition.set(key, []);
+    }
+    byRoundPosition.get(key).push(row);
+  }
+
+  const merged = [];
+  for (const rows of byRoundPosition.values()) {
+    const mergedRow = mergeQuestionRows(rows);
+    if (mergedRow) {
+      merged.push({
+        ...mergedRow,
+        round_number: roundIdToNumber.get(String(mergedRow.round_id)) || null,
+      });
+    }
+  }
+
+  merged.sort((a, b) => {
+    const ra = Number(a.round_number || 0);
+    const rb = Number(b.round_number || 0);
+    if (ra !== rb) return ra - rb;
+    return Number(a.position || 0) - Number(b.position || 0);
+  });
+
+  return merged;
 }
 
 export async function createQuestion(payload = {}) {
