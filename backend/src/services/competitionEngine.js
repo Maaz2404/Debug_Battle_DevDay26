@@ -45,7 +45,7 @@ function getQuestionGapSeconds() {
     return 10;
   }
   return parsed;
-}
+} 
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value);

@@ -8,6 +8,10 @@ interface TestResultsProps {
 }
 
 export function TestResults({ runResult, submissionResult }: TestResultsProps) {
+  const totalCases = runResult?.testCases.length ?? 0;
+  const passedCases = runResult?.testCases.filter((test) => test.passed).length ?? 0;
+  const visibleCases = runResult?.testCases.slice(0, 3) ?? [];
+
   return (
     <section className={styles.panel}>
       <div className={styles.header}>
@@ -26,10 +30,14 @@ export function TestResults({ runResult, submissionResult }: TestResultsProps) {
 
       {!runResult ? <p className={styles.empty}>Run your code to see testcase diagnostics.</p> : null}
 
+      {runResult ? (
+        <p className={styles.caseText}>{passedCases}/{totalCases} cases passed</p>
+      ) : null}
+
       {runResult?.error ? <p className={styles.caseText}>{runResult.error}</p> : null}
       {runResult?.output ? <p className={styles.caseText}>{runResult.output}</p> : null}
 
-      {runResult?.testCases.map((test) => (
+      {visibleCases.map((test) => (
         <div key={test.id} className={styles.case}>
           <div className={styles.caseLabel}>{test.label}</div>
           <div className={test.passed ? styles.casePass : styles.caseFail}>{test.passed ? "PASS" : "FAIL"}</div>
