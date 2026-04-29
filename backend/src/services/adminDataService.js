@@ -17,6 +17,16 @@ function buildSyntheticTeamEmail(teamName) {
   return `${slug}-${Date.now()}@debugrelay.local`;
 }
 
+function assertPasswordPolicy(password) {
+  if (!password) {
+    throw new HttpError(400, 'password is required');
+  }
+
+  if (password.length < 6) {
+    throw new HttpError(400, 'password must be at least 6 characters');
+  }
+}
+
 function normalizeQuestionTestCases(testCases) {
   if (!Array.isArray(testCases)) {
     throw new HttpError(400, 'test_cases must be an array');
@@ -79,9 +89,7 @@ export async function createTeam(payload = {}) {
     throw new HttpError(400, 'name is required');
   }
 
-  if (!password) {
-    throw new HttpError(400, 'password is required');
-  }
+  assertPasswordPolicy(password);
 
   const syntheticEmail = buildSyntheticTeamEmail(name);
   const { data: authCreated, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -156,9 +164,7 @@ export async function updateTeam(teamId, payload = {}) {
 
   if (payload.password !== undefined) {
     const password = cleanString(payload.password);
-    if (!password) {
-      throw new HttpError(400, 'password cannot be empty');
-    }
+    assertPasswordPolicy(password);
 
     const { error: passwordError } = await supabaseAdmin.auth.admin.updateUserById(existing.auth_user_id, {
       password,
@@ -263,9 +269,7 @@ export async function deleteTeam(teamId) {
 
 export async function resetAllTeamPasswords(payload = {}) {
   const password = cleanString(payload.password);
-  if (!password) {
-    throw new HttpError(400, 'password is required');
-  }
+  assertPasswordPolicy(password);
 
   const { data: teams, error } = await supabaseAdmin
     .from('teams')

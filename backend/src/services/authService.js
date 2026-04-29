@@ -13,6 +13,10 @@ function validateLoginInput(payload) {
     throw new HttpError(400, 'password is required');
   }
 
+  if (password.length < 6) {
+    throw new HttpError(400, 'password must be at least 6 characters');
+  }
+
   return {
     teamName: team_name.trim(),
     password,
@@ -70,6 +74,10 @@ export async function loginParticipant(payload) {
     });
 
     if (updateError) {
+      const message = String(updateError.message || '').toLowerCase();
+      if (message.includes('password') && message.includes('least')) {
+        throw new HttpError(400, 'password must be at least 6 characters');
+      }
       throw new HttpError(500, 'Failed to sync auth password', updateError.message);
     }
 
