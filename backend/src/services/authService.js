@@ -22,7 +22,7 @@ function validateLoginInput(payload) {
 async function findTeamByName(teamName) {
   const { data, error } = await supabaseAdmin
     .from('teams')
-    .select('id, name, auth_user_id')
+    .select('id, name, auth_user_id, password')
     .eq('name', teamName)
     .maybeSingle();
 
@@ -36,6 +36,10 @@ async function findTeamByName(teamName) {
 
   if (!data.auth_user_id) {
     throw new HttpError(409, 'Team is not linked to an auth user');
+  }
+
+  if (!data.password) {
+    throw new HttpError(409, 'Team password is not configured');
   }
 
   return data;
@@ -55,12 +59,27 @@ export async function loginParticipant(payload) {
   const team = await findTeamByName(teamName);
   const email = await getTeamAuthEmail(team.auth_user_id);
 
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error || !data?.session?.access_token) {
+  if (String(password) !== String(team.password)) {
     throw new HttpError(401, 'Invalid credentials');
   }
 
-  const { session } = data;
+  let signInResponse = await supabase.auth.signInWithPassword({ email, password });
+  if (signInResponse.error || !signInResponse.data?.session?.access_token) {
+    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(team.auth_user_id, {
+      password,
+    });
+
+    if (updateError) {
+      throw new HttpError(500, 'Failed to sync auth password', updateError.message);
+    }
+
+    signInResponse = await supabase.auth.signInWithPassword({ email, password });
+    if (signInResponse.error || !signInResponse.data?.session?.access_token) {
+      throw new HttpError(401, 'Invalid credentials');
+    }
+  }
+
+  const { session } = signInResponse.data;
 
   return {
     access_token: session.access_token,

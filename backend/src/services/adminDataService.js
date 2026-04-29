@@ -104,6 +104,7 @@ export async function createTeam(payload = {}) {
     .insert({
       name,
       auth_user_id: authUserId,
+      password,
     })
     .select('id, name, auth_user_id, created_at')
     .single();
@@ -165,6 +166,8 @@ export async function updateTeam(teamId, payload = {}) {
     if (passwordError) {
       throw new HttpError(500, 'Failed to update team password', passwordError.message);
     }
+
+    fields.password = password;
     didPasswordUpdate = true;
   }
 
@@ -285,6 +288,11 @@ export async function resetAllTeamPasswords(payload = {}) {
         failedTeamIds.push(String(team.id));
         continue;
       }
+
+      await supabaseAdmin
+        .from('teams')
+        .update({ password })
+        .eq('id', String(team.id));
 
       updated += 1;
     } catch (_) {
