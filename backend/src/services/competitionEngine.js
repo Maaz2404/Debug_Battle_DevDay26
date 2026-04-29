@@ -61,24 +61,7 @@ function stripStarterCodeBlocks(description) {
 }
 
 function buildDescriptionWithStarterCode(description, codes) {
-  const base = stripStarterCodeBlocks(description || '');
-  const blocks = [];
-
-  if (codes.javascript?.trim()) {
-    blocks.push(["```javascript", codes.javascript.trimEnd(), "```"].join("\n"));
-  }
-  if (codes.python?.trim()) {
-    blocks.push(["```python", codes.python.trimEnd(), "```"].join("\n"));
-  }
-  if (codes.cpp?.trim()) {
-    blocks.push(["```cpp", codes.cpp.trimEnd(), "```"].join("\n"));
-  }
-
-  if (blocks.length === 0) {
-    return base;
-  }
-
-  return [base, 'Starter code:', ...blocks].filter(Boolean).join("\n\n");
+  return stripStarterCodeBlocks(description || '');
 }
 
 function pickCanonicalRow(rows) {

@@ -68,23 +68,10 @@ async function getQuestionById(questionId) {
     }
   }
 
-  const baseDescription = String(canonical.description || '')
+  const description = String(canonical.description || '')
     .replace(/```(?:javascript|js|python|py|cpp|c\+\+)\s*[\s\S]*?```/gi, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-  const blocks = [];
-  if (codes.javascript.trim()) {
-    blocks.push(["```javascript", codes.javascript.trimEnd(), "```"].join("\n"));
-  }
-  if (codes.python.trim()) {
-    blocks.push(["```python", codes.python.trimEnd(), "```"].join("\n"));
-  }
-  if (codes.cpp.trim()) {
-    blocks.push(["```cpp", codes.cpp.trimEnd(), "```"].join("\n"));
-  }
-  const description = blocks.length > 0
-    ? [baseDescription, 'Starter code:', ...blocks].filter(Boolean).join("\n\n")
-    : baseDescription;
 
   const canonicalLang = String(canonical.language || 'javascript').toLowerCase();
   const code = canonicalLang === 'python'
