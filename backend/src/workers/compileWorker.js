@@ -261,9 +261,20 @@ async function getRoundRemainingSeconds(roundId) {
 
 async function setRunPassKey({ teamId, questionId, roundId }) {
   const ttlSeconds = await getRoundRemainingSeconds(roundId);
-  const key = `runpass:${teamId}:${questionId}:${roundId}`;
-  console.log('[compile-worker] setting runpass key', { key, ttl_seconds: ttlSeconds });
-  await redis.set(key, '1', 'EX', ttlSeconds);
+  const keys = new Set([String(questionId || '')].filter(Boolean));
+  // Support setting runpass keys for both the canonical job question id and
+  // the original language-specific question id when provided.
+  if (arguments && arguments[0]) {
+    const arg = arguments[0];
+    if (arg.canonicalQuestionId) keys.add(String(arg.canonicalQuestionId));
+    if (arg.originalQuestionId) keys.add(String(arg.originalQuestionId));
+  }
+
+  for (const qid of keys) {
+    const key = `runpass:${teamId}:${qid}:${roundId}`;
+    console.log('[compile-worker] setting runpass key', { key, ttl_seconds: ttlSeconds });
+    await redis.set(key, '1', 'EX', ttlSeconds);
+  }
 }
 
 async function evaluateTestCases({ submissionId, language, code, testCases }) {
@@ -345,6 +356,7 @@ async function processRunJob(job) {
     code,
     language,
     testCases,
+    originalQuestionId,
   } = job.data;
 
   console.log('[compile-worker] processing run job', {
@@ -384,7 +396,7 @@ async function processRunJob(job) {
   await updateSubmission(submissionId, { status, result });
 
   if (evaluation.allPassed) {
-    await setRunPassKey({ teamId, questionId, roundId });
+    await setRunPassKey({ teamId, questionId, roundId, originalQuestionId });
   }
 
   emitToUserSockets(userId, 'run:result', {
