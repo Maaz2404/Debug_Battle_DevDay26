@@ -102,7 +102,7 @@ async function createPendingRunSubmission({ auth, payload }) {
     .from('submissions')
     .insert({
       team_id: auth.team_id,
-      question_id: payload.questionId,
+      question_id: payload.canonicalQuestionId || payload.questionId,
       round_id: payload.roundId,
       job_type: 'run',
       code: payload.code,
@@ -146,9 +146,36 @@ export async function submitRunJob(payload, auth) {
 
   const question = await getQuestionForRun(normalized.questionId, normalized.roundId);
 
+  // Determine canonical question id for this round+position so runs and
+  // runpass keys can be tracked against a single canonical question regardless
+  // of language-specific rows.
+  let canonicalQuestionId = normalized.questionId;
+  try {
+    const { data: rows, error: rowsError } = await supabaseAdmin
+      .from('questions')
+      .select('id, language, position')
+      .eq('round_id', normalized.roundId)
+      .eq('position', question.position || 0);
+
+    if (!rowsError && Array.isArray(rows) && rows.length > 0) {
+      const pick = (rows) => {
+        const js = rows.find((r) => String(r.language || '').toLowerCase() === 'javascript');
+        if (js) return js.id;
+        const py = rows.find((r) => String(r.language || '').toLowerCase() === 'python');
+        if (py) return py.id;
+        const cpp = rows.find((r) => String(r.language || '').toLowerCase() === 'cpp');
+        if (cpp) return cpp.id;
+        return rows[0].id;
+      };
+      canonicalQuestionId = pick(rows);
+    }
+  } catch (e) {
+    console.warn('[run-service] failed to determine canonical question id', { message: e?.message || String(e) });
+  }
+
   const submissionId = await createPendingRunSubmission({
     auth,
-    payload: normalized,
+    payload: { ...normalized, canonicalQuestionId },
   });
 
   console.log('[run-service] enqueueing compile job', {
@@ -158,6 +185,7 @@ export async function submitRunJob(payload, auth) {
     questionId: normalized.questionId,
     roundId: normalized.roundId,
     language: normalized.language,
+    canonicalQuestionId,
     test_case_count: Array.isArray(question.test_cases) ? question.test_cases.length : 0,
   });
 
@@ -165,11 +193,15 @@ export async function submitRunJob(payload, auth) {
     submissionId,
     teamId: auth.team_id,
     userId: auth.user_id,
-    questionId: normalized.questionId,
+    // Use canonical question id for job grouping, but keep original id
+    // on the submission so language-specific rows remain traceable.
+    questionId: canonicalQuestionId,
+    originalQuestionId: normalized.questionId,
     roundId: normalized.roundId,
     code: normalized.code,
     language: normalized.language,
     testCases: question.test_cases || [],
+    canonicalQuestionId,
     jobType: 'run',
   });
 
