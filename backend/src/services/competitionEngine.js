@@ -542,7 +542,48 @@ export async function assertCanAttemptQuestion(roundId, questionId) {
 
   const currentQuestionId = String(state.questionIds[state.currentQuestionIndex] || '');
   if (String(questionId) !== currentQuestionId) {
-    throw new HttpError(409, 'Submission is not for the current active question');
+    // Allow language-specific question rows to be treated as the same question
+    // by resolving the canonical/merged question bundle for the provided
+    // questionId and comparing its canonical id to the active question id.
+    try {
+      const providedBundle = await getQuestionBundleById(questionId);
+      const providedCanonicalId = String(providedBundle?.id || '');
+
+      // If canonical ids match, allow
+      if (providedCanonicalId && providedCanonicalId === currentQuestionId) {
+        // matched to canonical id -> allow
+        return state;
+      }
+
+      // As an additional fallback, accept any question row that shares the
+      // same round and position as the active canonical question. This handles
+      // setups where each language is a separate DB row but they represent the
+      // same problem position.
+      const activeBundle = await getQuestionBundleById(currentQuestionId);
+      const providedPos = Number(providedBundle?.position || -1);
+      const activePos = Number(activeBundle?.position || -2);
+      const sameRound = String(providedBundle?.round_id || '') === String(activeBundle?.round_id || '');
+
+      if (sameRound && providedPos === activePos && providedPos >= 0) {
+        console.log('[competition-engine] accepted language-specific question by position', {
+          provided: questionId,
+          provided_canonical: providedCanonicalId,
+          current_active: currentQuestionId,
+          position: providedPos,
+        });
+        return state;
+      }
+
+      console.warn('[competition-engine] question id mismatch', {
+        provided: questionId,
+        provided_canonical: providedCanonicalId,
+        current_active: currentQuestionId,
+      });
+      throw new HttpError(409, 'Submission is not for the current active question');
+    } catch (e) {
+      // If we cannot resolve the bundle or it doesn't match, reject
+      throw new HttpError(409, 'Submission is not for the current active question');
+    }
   }
 
   return state;

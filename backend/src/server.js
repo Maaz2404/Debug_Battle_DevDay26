@@ -17,11 +17,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const prototypeDir = path.resolve(__dirname, '../prototype');
 
+const corsOptions = {
+  origin: '*',
+  credentials: false,
+};
+
 app.use(helmet());
-app.use(cors({
-  origin: env.ALLOWED_ORIGINS.length === 1 ? env.ALLOWED_ORIGINS[0] : env.ALLOWED_ORIGINS,
-  credentials: true,
-}));
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/health', (req, res) => {

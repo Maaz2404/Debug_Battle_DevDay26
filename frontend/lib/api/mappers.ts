@@ -272,7 +272,9 @@ export function mapBackendRunResult(payload: {
     label: `Case #${index + 1}`,
     passed: Boolean(test.passed),
     expected: String(test.expected || ""),
-    actual: String(test.actual || ""),
+    // If backend didn't populate `actual` (e.g. compile errors in stderr),
+    // prefer stderr for display so users see compiler messages.
+    actual: String(test.actual || test.stderr || ""),
     runtimeMs: 0,
   }));
 

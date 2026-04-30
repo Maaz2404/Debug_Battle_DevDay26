@@ -22,7 +22,7 @@ if (!supabaseSecretKey) {
 }
 
 export const env = {
-  PORT: Number(process.env.PORT || 3000),
+  PORT: Number(process.env.PORT || 5000),
   SUPABASE_URL: requireEnv('SUPABASE_URL'),
   SUPABASE_SECRET_KEY: supabaseSecretKey,
   SUPABASE_PUBLISHABLE_KEY: supabasePublishableKey,

@@ -52,6 +52,37 @@ async function getQuestionForSubmit(questionId, roundId) {
     test_case_count: Array.isArray(data.test_cases) ? data.test_cases.length : 0,
   });
 
+  // If the question row has no test cases, attempt to find a sibling question
+  // (same round & position) that contains test_cases (useful when questions
+  // are stored per-language).
+  if (!Array.isArray(data.test_cases) || data.test_cases.length === 0) {
+    try {
+      const { data: alt, error: altError } = await supabaseAdmin
+        .from('questions')
+        .select('id, round_id, position, test_cases, language, base_score')
+        .eq('round_id', roundId)
+        .eq('position', data.position)
+        .neq('test_cases', '[]')
+        .limit(1)
+        .maybeSingle();
+
+      if (alt && Array.isArray(alt.test_cases) && alt.test_cases.length > 0) {
+        console.log('[submit-service] using fallback question with test_cases', {
+          original_question_id: data.id,
+          fallback_question_id: alt.id,
+          fallback_language: alt.language,
+          test_case_count: alt.test_cases.length,
+        });
+        return alt;
+      }
+      if (altError) {
+        console.warn('[submit-service] fallback query error', { message: altError.message });
+      }
+    } catch (e) {
+      console.warn('[submit-service] fallback query failed', { message: e?.message || String(e) });
+    }
+  }
+
   return data;
 }
 

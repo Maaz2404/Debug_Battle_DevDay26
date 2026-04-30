@@ -346,20 +346,44 @@ export const apiClient = {
     }
 
     connectCompetitionSocket(token);
-    const accepted = await apiRequest<{ submission_id: string }>(endpoints.participant.run, {
-      method: "POST",
-      token,
-      body: {
-        code: payload.code,
-        language: payload.language,
-        questionId: payload.questionId,
-        roundId,
-      },
-    });
 
-    return {
-      submissionId: String(accepted.submission_id || ""),
-    };
+    // Try request; on 409 (stale question/round) refresh state once and retry
+    try {
+      const accepted = await apiRequest<{ submission_id: string }>(endpoints.participant.run, {
+        method: "POST",
+        token,
+        body: {
+          code: payload.code,
+          language: payload.language,
+          questionId: payload.questionId,
+          roundId,
+        },
+      });
+
+      return { submissionId: String(accepted.submission_id || "") };
+    } catch (err) {
+      // If backend indicates the question/round changed, refresh snapshot and retry once
+      const errAny = err as any;
+      if (errAny?.status === 409) {
+        const state = await getCompetitionState(token);
+        runtimeRoundId = state.round?.round_id || runtimeRoundId;
+        // Retry the request once
+        const accepted = await apiRequest<{ submission_id: string }>(endpoints.participant.run, {
+          method: "POST",
+          token,
+          body: {
+            code: payload.code,
+            language: payload.language,
+            questionId: payload.questionId,
+            roundId: runtimeRoundId,
+          },
+        });
+
+        return { submissionId: String(accepted.submission_id || "") };
+      }
+
+      throw err;
+    }
   },
 
   waitForRunResult: async (submissionId: string): Promise<RunResult> => {
@@ -416,20 +440,41 @@ export const apiClient = {
     }
 
     connectCompetitionSocket(token);
-    const accepted = await apiRequest<{ submission_id: string }>(endpoints.participant.submit, {
-      method: "POST",
-      token,
-      body: {
-        code: payload.code,
-        language: payload.language,
-        questionId: payload.questionId,
-        roundId,
-      },
-    });
 
-    return {
-      submissionId: String(accepted.submission_id || ""),
-    };
+    try {
+      const accepted = await apiRequest<{ submission_id: string }>(endpoints.participant.submit, {
+        method: "POST",
+        token,
+        body: {
+          code: payload.code,
+          language: payload.language,
+          questionId: payload.questionId,
+          roundId,
+        },
+      });
+
+      return { submissionId: String(accepted.submission_id || "") };
+    } catch (err) {
+      const errAny = err as any;
+      if (errAny?.status === 409) {
+        const state = await getCompetitionState(token);
+        runtimeRoundId = state.round?.round_id || runtimeRoundId;
+        const accepted = await apiRequest<{ submission_id: string }>(endpoints.participant.submit, {
+          method: "POST",
+          token,
+          body: {
+            code: payload.code,
+            language: payload.language,
+            questionId: payload.questionId,
+            roundId: runtimeRoundId,
+          },
+        });
+
+        return { submissionId: String(accepted.submission_id || "") };
+      }
+
+      throw err;
+    }
   },
 
   waitForSubmissionResult: async (submissionId: string): Promise<SubmissionResult> => {

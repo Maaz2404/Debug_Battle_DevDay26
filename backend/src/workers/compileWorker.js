@@ -300,7 +300,9 @@ async function evaluateTestCases({ submissionId, language, code, testCases }) {
       const tc = chunk[i];
       const execution = rows[i] || {};
 
-      const actualRaw = String(execution?.stdout ?? '');
+      // Prefer stdout, but fall back to stderr when stdout is empty so
+      // compiler errors appear as the "actual" output in test results.
+      const actualRaw = normalizeOutput(execution?.stdout) || normalizeOutput(execution?.stderr) || '';
       const expectedRaw = String(tc.expected_output ?? '');
       const compared = compareByMode(actualRaw, expectedRaw, tc);
 

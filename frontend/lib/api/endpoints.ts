@@ -1,4 +1,4 @@
-const fallbackApiBase = "http://localhost:3000/api";
+const fallbackApiBase = "http://localhost:5000/api";
 
 function stripTrailingSlash(value: string) {
   return value.replace(/\/+$/, "");
